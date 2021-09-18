@@ -2,8 +2,13 @@
 name = "crypto-cli-tools"
 version = "0.1.1"
 edition = "2021"
+authors = ["soulmachine <soulmachine@gmail.com>"]
+edition = "2018"
+description   = "A collection of CLI tools to process cryptocurrency data"
+license = "Apache-2.0"
+repository = "https://github.com/soulmachine/crypto-cli-tools"
+keywords = ["cryptocurrency", "blockchain", "trading"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 crypto-msg-parser = "1.4.1"
