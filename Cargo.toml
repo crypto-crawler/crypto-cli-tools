@@ -1,12 +1,12 @@
 [package]
 name = "crypto-cli-tools"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crypto-msg-parser = "1.4.0"
+crypto-msg-parser = "1.4.1"
 flate2 = "1"
 serde_json = "1.0"
 xz2 = "0.1"
