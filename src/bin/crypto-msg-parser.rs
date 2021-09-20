@@ -81,9 +81,8 @@ fn parse_lines(
                         match msg_type {
                             MessageType::L2Event => {
                                 let msg = serde_json::from_str::<OrderBookMsg>(&line).unwrap();
-                                let raw = serde_json::to_string(&msg.raw).unwrap();
                                 if let Ok(messages) =
-                                    parse_l2(exchange, market_type, &raw, Some(msg.timestamp))
+                                    parse_l2(exchange, market_type, &msg.json, Some(msg.timestamp))
                                 {
                                     for message in messages {
                                         let json_str = serde_json::to_string(&message).unwrap();
@@ -95,8 +94,8 @@ fn parse_lines(
                             }
                             MessageType::Trade => {
                                 let msg = serde_json::from_str::<TradeMsg>(&line).unwrap();
-                                let raw = serde_json::to_string(&msg.raw).unwrap();
-                                if let Ok(messages) = parse_trade(exchange, market_type, &raw) {
+                                if let Ok(messages) = parse_trade(exchange, market_type, &msg.json)
+                                {
                                     for message in messages {
                                         let json_str = serde_json::to_string(&message).unwrap();
                                         writeln!(writer, "{}", json_str).unwrap();
