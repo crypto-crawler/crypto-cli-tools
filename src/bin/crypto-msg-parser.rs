@@ -181,8 +181,18 @@ fn main() {
     };
 
     let (error_lines, total_lines) = parse_lines(buf_reader.as_mut(), writer.as_mut());
-    println!(
-        "Parse succeeded, dropped {} malformed lines out of {} lines",
-        error_lines, total_lines
-    );
+    let error_ratio = (error_lines as f64) / (total_lines as f64);
+    if error_ratio > 0.01 {
+        eprintln!(
+                "Parse failed, dropped {} malformed lines out of {} lines, error ratio {}% is higher than 1%",
+                error_lines, total_lines,
+                error_ratio * 100.0,
+            );
+        std::process::exit(1);
+    } else {
+        println!(
+            "Parse succeeded, dropped {} malformed lines out of {} lines",
+            error_lines, total_lines
+        );
+    }
 }
