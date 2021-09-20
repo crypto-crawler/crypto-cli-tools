@@ -222,20 +222,27 @@ where
                         }
                         match msg.msg_type {
                             MessageType::L2Event => {
-                                if let Ok(messages) = parse_l2(
-                                    exchange,
-                                    msg.market_type,
-                                    &msg.json,
-                                    Some(msg.received_at as i64),
-                                ) {
-                                    for message in messages {
-                                        if get_day(message.timestamp / 1000) == day {
-                                            writeln!(
-                                                output.1,
-                                                "{}",
-                                                serde_json::to_string(&message).unwrap()
-                                            )
-                                            .unwrap();
+                                // Skip unsupported markets
+                                if market_type != MarketType::QuantoFuture
+                                    && market_type == MarketType::QuantoSwap
+                                    && market_type == MarketType::Move
+                                    && market_type == MarketType::BVOL
+                                {
+                                    if let Ok(messages) = parse_l2(
+                                        exchange,
+                                        msg.market_type,
+                                        &msg.json,
+                                        Some(msg.received_at as i64),
+                                    ) {
+                                        for message in messages {
+                                            if get_day(message.timestamp / 1000) == day {
+                                                writeln!(
+                                                    output.1,
+                                                    "{}",
+                                                    serde_json::to_string(&message).unwrap()
+                                                )
+                                                .unwrap();
+                                            }
                                         }
                                     }
                                 }
