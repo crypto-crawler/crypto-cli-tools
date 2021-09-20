@@ -271,7 +271,7 @@ where
     (error_lines, total_lines)
 }
 
-fn sort_file<P>(input_file: P, output_file: P)
+fn sort_file<P>(input_file: P, output_file: P) -> (i64, i64)
 where
     P: AsRef<Path>,
 {
@@ -322,12 +322,8 @@ where
         }
         writer.flush().unwrap();
         std::fs::remove_file(input_file).unwrap();
-    } else {
-        error!(
-            "There are {} malformed lines out of {} lines",
-            error_lines, total_lines
-        );
     }
+    (error_lines, total_lines)
 }
 
 /// Process files of one day of the same exchange, msg_type, market_type.
@@ -503,6 +499,8 @@ fn process_files_of_day(
             "Started sort {} {} {} {}",
             exchange, market_type, msg_type, day
         );
+        #[allow(clippy::type_complexity)]
+        let (tx, rx): (Sender<(i64, i64)>, Receiver<(i64, i64)>) = mpsc::channel();
         let mut paths: Vec<PathBuf> = paths_raw
             .into_iter()
             .chain(paths_parsed.into_iter())
@@ -520,20 +518,42 @@ fn process_files_of_day(
                     .unwrap()
             );
             let output_file = Path::new(input_file.parent().unwrap()).join(output_file_name);
+            let thread_tx = tx.clone();
             thread_pool.execute(move || {
-                sort_file(input_file, output_file);
+                let t = sort_file(input_file, output_file);
+                thread_tx.send(t).unwrap();
             });
         }
         thread_pool.join();
-        info!(
-            "Finished sort {} {} {} {}, time elapsed {} seconds",
-            exchange,
-            market_type,
-            msg_type,
-            day,
-            start_timstamp.elapsed().as_secs()
-        );
-        true
+        drop(tx); // drop the sender
+        let mut total_lines = 0;
+        let mut error_lines = 0;
+        for t in rx {
+            error_lines += t.0;
+            total_lines += t.1;
+        }
+        if error_lines == 0 {
+            info!(
+                "Finished sort {} {} {} {}, time elapsed {} seconds",
+                exchange,
+                market_type,
+                msg_type,
+                day,
+                start_timstamp.elapsed().as_secs()
+            );
+            true
+        } else {
+            error!(
+                "Failed to sort {} {} {} {}, found {} malformed lines out of {} lines, time elapsed {} seconds",
+                exchange,
+                market_type,
+                msg_type,
+                day,
+                error_lines, total_lines,
+                start_timstamp.elapsed().as_secs()
+            );
+            false
+        }
     }
 }
 
