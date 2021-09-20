@@ -21,6 +21,7 @@ use flate2::write::GzEncoder;
 use flate2::{read::GzDecoder, Compression};
 use glob::glob;
 use log::*;
+use rlimit::{setrlimit, Resource};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::mpsc;
@@ -559,6 +560,8 @@ fn process_files_of_day(
 
 fn main() {
     env_logger::init();
+    assert!(setrlimit(Resource::NOFILE, 2048, 2048).is_ok());
+
     let args: Vec<String> = env::args().collect();
     if args.len() != 8 {
         eprintln!("Usage: crypto-daily-processor <exchange> <msg_type> <market_type> <day> <input_dir> <output_dir_raw> <output_dir_parsed>");
