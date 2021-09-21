@@ -1,18 +1,58 @@
+use chrono::prelude::*;
+use chrono::DateTime;
 use crypto_msg_parser::{parse_l2, parse_trade, MarketType, MessageType, OrderBookMsg, TradeMsg};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use regex::Regex;
 use serde_json::Value;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::io::prelude::*;
 use std::str::FromStr;
-use std::{collections::HashMap, env};
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap},
+    env,
+};
+
+fn string_hash(s: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn get_month(unix_timestamp: i64) -> String {
+    let naive = NaiveDateTime::from_timestamp(unix_timestamp, 0);
+    let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+    datetime.format("%Y-%m").to_string()
+}
 
 fn parse_lines(
     buf_reader: &mut dyn std::io::BufRead,
     writer: &mut dyn std::io::Write,
+    month: Option<String>,
 ) -> (i64, i64) {
     let mut total_lines = 0;
     let mut error_lines = 0;
+    let mut visited = HashSet::<u64>::new();
+    let capacity = 2048; // max number of elements in min heap
+    let mut heap = BinaryHeap::<(Reverse<i64>, String)>::with_capacity(capacity);
+    let mut write = |timestamp: i64, line: String| {
+        if month.is_some() && Some(get_month(timestamp / 1000)) != month {
+            return;
+        }
+        if heap.len() >= capacity {
+            let t = heap.pop().unwrap();
+            writeln!(writer, "{}", t.1).unwrap();
+            let hashcode = string_hash(&t.1);
+            visited.remove(&hashcode);
+        }
+        if visited.insert(string_hash(&line)) {
+            heap.push((Reverse(timestamp), line));
+        }
+    };
+
     for line in buf_reader.lines() {
         if let Ok(line) = line {
             total_lines += 1;
@@ -58,7 +98,7 @@ fn parse_lines(
                                 {
                                     for message in messages {
                                         let json_str = serde_json::to_string(&message).unwrap();
-                                        writeln!(writer, "{}", json_str).unwrap();
+                                        write(message.timestamp, json_str);
                                     }
                                 } else {
                                     error_lines += 1;
@@ -68,7 +108,7 @@ fn parse_lines(
                                 if let Ok(messages) = parse_trade(exchange, market_type, raw) {
                                     for message in messages {
                                         let json_str = serde_json::to_string(&message).unwrap();
-                                        writeln!(writer, "{}", json_str).unwrap();
+                                        write(message.timestamp, json_str);
                                     }
                                 } else {
                                     error_lines += 1;
@@ -86,7 +126,7 @@ fn parse_lines(
                                 {
                                     for message in messages {
                                         let json_str = serde_json::to_string(&message).unwrap();
-                                        writeln!(writer, "{}", json_str).unwrap();
+                                        write(message.timestamp, json_str);
                                     }
                                 } else {
                                     error_lines += 1;
@@ -98,7 +138,7 @@ fn parse_lines(
                                 {
                                     for message in messages {
                                         let json_str = serde_json::to_string(&message).unwrap();
-                                        writeln!(writer, "{}", json_str).unwrap();
+                                        write(message.timestamp, json_str);
                                     }
                                 } else {
                                     error_lines += 1;
@@ -115,14 +155,20 @@ fn parse_lines(
             error_lines += 1;
         }
     }
+    while let Some(t) = heap.pop() {
+        writeln!(writer, "{}", t.1).unwrap();
+        let hashcode = string_hash(&t.1);
+        visited.remove(&hashcode);
+    }
+    debug_assert!(visited.is_empty());
     writer.flush().unwrap();
     (error_lines, total_lines)
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() != 3 {
-        eprintln!("Usage: crypto-msg-parser <input_file> <output_file>");
+    if args.len() != 3 && args.len() != 4 {
+        eprintln!("Usage: crypto-msg-parser <input_file> <output_file> [yyyy-MM]");
         std::process::exit(1);
     }
 
@@ -148,6 +194,17 @@ fn main() {
         );
         std::process::exit(1);
     }
+    let month = if args.len() == 4 {
+        let m: &'static str = Box::leak(args[3].clone().into_boxed_str());
+        let re = Regex::new(r"^\d{4}-\d{2}$").unwrap();
+        if !re.is_match(m) {
+            eprintln!("{} is invalid, month should be yyyy-MM", m);
+            std::process::exit(1);
+        }
+        Some(m.to_string())
+    } else {
+        None
+    };
 
     let f_in =
         std::fs::File::open(input_file).unwrap_or_else(|_| panic!("{} does not exist", input_file));
@@ -179,7 +236,7 @@ fn main() {
         Box::new(std::io::BufWriter::new(f_out))
     };
 
-    let (error_lines, total_lines) = parse_lines(buf_reader.as_mut(), writer.as_mut());
+    let (error_lines, total_lines) = parse_lines(buf_reader.as_mut(), writer.as_mut(), month);
     let error_ratio = (error_lines as f64) / (total_lines as f64);
     if error_ratio > 0.01 {
         eprintln!(
