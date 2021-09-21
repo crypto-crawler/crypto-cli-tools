@@ -153,6 +153,7 @@ fn parse_lines(
             }
         } else {
             error_lines += 1;
+            break;
         }
     }
     while let Some(t) = heap.pop() {
