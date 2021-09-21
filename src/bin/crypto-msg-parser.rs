@@ -52,109 +52,122 @@ fn parse_lines(
             heap.push((Reverse(timestamp), line));
         }
     };
+    let mut is_reparse = false;
 
     for line in buf_reader.lines() {
-        if let Ok(line) = line {
-            total_lines += 1;
-            if let Ok(json_obj) = serde_json::from_str::<HashMap<String, Value>>(&line) {
-                if !json_obj.contains_key("exchange")
-                    && !json_obj.contains_key("market_type")
-                    && !json_obj.contains_key("msg_type")
-                {
-                    error_lines += 1;
-                } else {
-                    let exchange = json_obj
-                        .get("exchange")
-                        .expect("No exchange field!")
-                        .as_str()
-                        .unwrap();
-                    let market_type = json_obj
-                        .get("market_type")
-                        .expect("No market_type field!")
-                        .as_str()
-                        .unwrap();
-                    let msg_type = json_obj
-                        .get("msg_type")
-                        .expect("No msg_type field!")
-                        .as_str()
-                        .unwrap();
-                    let market_type = MarketType::from_str(market_type).unwrap();
-                    let msg_type = MessageType::from_str(msg_type).unwrap();
-                    if json_obj.contains_key("received_at") {
-                        // raw messages from crypto-crawler
-                        let timestamp = json_obj
-                            .get("received_at")
-                            .expect("No received_at field!")
-                            .as_i64();
-                        let raw = json_obj
-                            .get("json")
-                            .expect("No json field!")
+        match line {
+            Ok(line) => {
+                total_lines += 1;
+                if let Ok(json_obj) = serde_json::from_str::<HashMap<String, Value>>(&line) {
+                    if !json_obj.contains_key("exchange")
+                        && !json_obj.contains_key("market_type")
+                        && !json_obj.contains_key("msg_type")
+                    {
+                        error_lines += 1;
+                    } else {
+                        let exchange = json_obj
+                            .get("exchange")
+                            .expect("No exchange field!")
                             .as_str()
                             .unwrap();
-                        match msg_type {
-                            MessageType::L2Event => {
-                                if let Ok(messages) =
-                                    parse_l2(exchange, market_type, raw, timestamp)
-                                {
-                                    for message in messages {
-                                        let json_str = serde_json::to_string(&message).unwrap();
-                                        write(message.timestamp, json_str);
+                        let market_type = json_obj
+                            .get("market_type")
+                            .expect("No market_type field!")
+                            .as_str()
+                            .unwrap();
+                        let msg_type = json_obj
+                            .get("msg_type")
+                            .expect("No msg_type field!")
+                            .as_str()
+                            .unwrap();
+                        let market_type = MarketType::from_str(market_type).unwrap();
+                        let msg_type = MessageType::from_str(msg_type).unwrap();
+                        if json_obj.contains_key("received_at") {
+                            // raw messages from crypto-crawler
+                            let timestamp = json_obj
+                                .get("received_at")
+                                .expect("No received_at field!")
+                                .as_i64();
+                            let raw = json_obj
+                                .get("json")
+                                .expect("No json field!")
+                                .as_str()
+                                .unwrap();
+                            match msg_type {
+                                MessageType::L2Event => {
+                                    if let Ok(messages) =
+                                        parse_l2(exchange, market_type, raw, timestamp)
+                                    {
+                                        for message in messages {
+                                            let json_str = serde_json::to_string(&message).unwrap();
+                                            write(message.timestamp, json_str);
+                                        }
+                                    } else {
+                                        error_lines += 1;
                                     }
-                                } else {
-                                    error_lines += 1;
                                 }
-                            }
-                            MessageType::Trade => {
-                                if let Ok(messages) = parse_trade(exchange, market_type, raw) {
-                                    for message in messages {
-                                        let json_str = serde_json::to_string(&message).unwrap();
-                                        write(message.timestamp, json_str);
+                                MessageType::Trade => {
+                                    if let Ok(messages) = parse_trade(exchange, market_type, raw) {
+                                        for message in messages {
+                                            let json_str = serde_json::to_string(&message).unwrap();
+                                            write(message.timestamp, json_str);
+                                        }
+                                    } else {
+                                        error_lines += 1;
                                     }
-                                } else {
-                                    error_lines += 1;
                                 }
+                                _ => panic!("Unknown msg_type {}", msg_type),
                             }
-                            _ => panic!("Unknown msg_type {}", msg_type),
-                        }
-                    } else {
-                        // re-parse OrderBookMsg and TradeMsg
-                        match msg_type {
-                            MessageType::L2Event => {
-                                let msg = serde_json::from_str::<OrderBookMsg>(&line).unwrap();
-                                if let Ok(messages) =
-                                    parse_l2(exchange, market_type, &msg.json, Some(msg.timestamp))
-                                {
-                                    for message in messages {
-                                        let json_str = serde_json::to_string(&message).unwrap();
-                                        write(message.timestamp, json_str);
+                        } else {
+                            // re-parse OrderBookMsg and TradeMsg
+                            is_reparse = true;
+                            match msg_type {
+                                MessageType::L2Event => {
+                                    let msg = serde_json::from_str::<OrderBookMsg>(&line).unwrap();
+                                    if let Ok(messages) = parse_l2(
+                                        exchange,
+                                        market_type,
+                                        &msg.json,
+                                        Some(msg.timestamp),
+                                    ) {
+                                        for message in messages {
+                                            let json_str = serde_json::to_string(&message).unwrap();
+                                            write(message.timestamp, json_str);
+                                        }
+                                    } else {
+                                        error_lines += 1;
                                     }
-                                } else {
-                                    error_lines += 1;
                                 }
-                            }
-                            MessageType::Trade => {
-                                let msg = serde_json::from_str::<TradeMsg>(&line).unwrap();
-                                if let Ok(messages) = parse_trade(exchange, market_type, &msg.json)
-                                {
-                                    for message in messages {
-                                        let json_str = serde_json::to_string(&message).unwrap();
-                                        write(message.timestamp, json_str);
+                                MessageType::Trade => {
+                                    let msg = serde_json::from_str::<TradeMsg>(&line).unwrap();
+                                    if let Ok(messages) =
+                                        parse_trade(exchange, market_type, &msg.json)
+                                    {
+                                        for message in messages {
+                                            let json_str = serde_json::to_string(&message).unwrap();
+                                            write(message.timestamp, json_str);
+                                        }
+                                    } else {
+                                        error_lines += 1;
                                     }
-                                } else {
-                                    error_lines += 1;
                                 }
+                                _ => panic!("Unknown msg_type {}", msg_type),
                             }
-                            _ => panic!("Unknown msg_type {}", msg_type),
                         }
                     }
+                } else {
+                    error_lines += 1;
                 }
-            } else {
-                error_lines += 1;
             }
-        } else {
-            // Err(Custom { kind: Other, error: "corrupt xz stream" })
-            error_lines += 1;
-            break;
+            Err(err) => {
+                // Err(Custom { kind: Other, error: "corrupt xz stream" })
+                error_lines += 1;
+                if is_reparse {
+                    panic!("{:?}", err);
+                } else {
+                    break;
+                }
+            }
         }
     }
     while let Some(t) = heap.pop() {
