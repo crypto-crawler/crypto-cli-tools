@@ -152,6 +152,7 @@ fn parse_lines(
                 error_lines += 1;
             }
         } else {
+            // Err(Custom { kind: Other, error: "corrupt xz stream" })
             error_lines += 1;
             break;
         }
@@ -213,7 +214,7 @@ fn main() {
         let d = GzDecoder::new(f_in);
         Box::new(std::io::BufReader::new(d))
     } else if input_file.ends_with(".json.xz") {
-        let d = xz2::read::XzDecoder::new(f_in);
+        let d = xz2::read::XzDecoder::new_multi_decoder(f_in);
         Box::new(std::io::BufReader::new(d))
     } else {
         Box::new(std::io::BufReader::new(f_in))
