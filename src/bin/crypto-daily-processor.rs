@@ -16,7 +16,7 @@ use std::{
 
 use chrono::prelude::*;
 use chrono::DateTime;
-use crypto_msg_parser::{parse_l2, parse_trade, MarketType, MessageType};
+use crypto_msg_parser::{extract_symbol, parse_l2, parse_trade, MarketType, MessageType};
 use flate2::write::GzEncoder;
 use flate2::{read::GzDecoder, Compression};
 use glob::glob;
@@ -119,39 +119,7 @@ where
                     is_new
                 };
                 if is_new {
-                    let symbol_pair = match msg.msg_type {
-                        MessageType::L2Event => {
-                            if let Ok(messages) = parse_l2(
-                                exchange,
-                                msg.market_type,
-                                &msg.json,
-                                Some(msg.received_at as i64),
-                            ) {
-                                if messages.is_empty() {
-                                    None
-                                } else {
-                                    Some((messages[0].symbol.clone(), messages[0].pair.clone()))
-                                }
-                            } else {
-                                None
-                            }
-                        }
-                        MessageType::Trade => {
-                            if let Ok(messages) =
-                                parse_trade(&msg.exchange, msg.market_type, &msg.json)
-                            {
-                                if messages.is_empty() {
-                                    None
-                                } else {
-                                    Some((messages[0].symbol.clone(), messages[0].pair.clone()))
-                                }
-                            } else {
-                                None
-                            }
-                        }
-                        _ => panic!("Unknown msg_type {}", msg.msg_type),
-                    };
-                    if let Some((symbol, pair)) = symbol_pair {
+                    if let Some(symbol) = extract_symbol(exchange, market_type, &msg.json) {
                         let mut m = split_files.lock().unwrap();
                         let mut output = {
                             if !m.contains_key(&symbol) {
@@ -179,6 +147,8 @@ where
                                     ))
                                 };
                                 let buf_writer_parsed = {
+                                    let pair =
+                                        crypto_pair::normalize_pair(&symbol, exchange).unwrap();
                                     let pair = re.replace_all(&pair, "_");
                                     let output_file_name = format!(
                                         "{}.{}.{}.{}.{}.{}.json.gz",
