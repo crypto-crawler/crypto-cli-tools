@@ -537,7 +537,7 @@ fn process_files_of_day(
 
 fn main() {
     env_logger::init();
-    assert!(setrlimit(Resource::NOFILE, 2048, 2048).is_ok());
+    assert!(setrlimit(Resource::NOFILE, 4096, 4096).is_ok());
 
     let args: Vec<String> = env::args().collect();
     if args.len() != 8 {
