@@ -1,5 +1,3 @@
-use rand::seq::SliceRandom;
-use rand::thread_rng;
 use regex::Regex;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
@@ -112,11 +110,7 @@ where
                         hasher.finish()
                     };
                     let mut visited = visited.lock().unwrap();
-                    let is_new = !visited.contains(&hashcode);
-                    if is_new {
-                        visited.insert(hashcode);
-                    }
-                    is_new
+                    visited.insert(hashcode)
                 };
                 if is_new {
                     if let Some(symbol) = extract_symbol(exchange, market_type, &msg.json) {
@@ -365,7 +359,8 @@ fn process_files_of_day(
         #[allow(clippy::type_complexity)]
         let (tx, rx): (Sender<(i64, i64)>, Receiver<(i64, i64)>) = mpsc::channel();
         let start_timstamp = Instant::now();
-        paths.shuffle(&mut thread_rng());
+        // small files get processed first
+        paths.sort_by_cached_key(|path| std::fs::metadata(path).unwrap().len());
         let mut visited_map: HashMap<String, Arc<Mutex<HashSet<u64>>>> = HashMap::new();
         let mut split_files_map: HashMap<String, Arc<Mutex<HashMap<String, Output>>>> =
             HashMap::new();
@@ -484,7 +479,8 @@ fn process_files_of_day(
             .chain(paths_parsed.into_iter())
             .collect();
         let start_timstamp = Instant::now();
-        paths.shuffle(&mut thread_rng());
+        // small files get processed first
+        paths.sort_by_cached_key(|path| std::fs::metadata(path).unwrap().len());
         for input_file in paths {
             let file_name = input_file.as_path().file_name().unwrap();
             let output_file_name = format!(
