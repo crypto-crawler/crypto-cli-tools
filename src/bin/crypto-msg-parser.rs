@@ -22,16 +22,23 @@ fn string_hash(s: &str) -> u64 {
     hasher.finish()
 }
 
-fn get_month(unix_timestamp: i64) -> String {
-    let naive = NaiveDateTime::from_timestamp(unix_timestamp, 0);
+fn match_month_or_day(timestamp_millis: i64, month_or_day: &str) -> bool {
+    let naive = NaiveDateTime::from_timestamp(timestamp_millis / 1000, 0);
     let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
-    datetime.format("%Y-%m").to_string()
+    let datetime_str = if month_or_day.len() == 7 {
+        datetime.format("%Y-%m").to_string()
+    } else if month_or_day.len() == 10 {
+        datetime.format("%Y-%m-%d").to_string()
+    } else {
+        panic!("Invalid time {}", month_or_day);
+    };
+    month_or_day == datetime_str
 }
 
 fn parse_lines(
     buf_reader: &mut dyn std::io::BufRead,
     writer: &mut dyn std::io::Write,
-    month: Option<String>,
+    month_or_day: Option<&str>,
 ) -> (i64, i64) {
     let mut total_lines = 0;
     let mut error_lines = 0;
@@ -39,7 +46,7 @@ fn parse_lines(
     let capacity = 2048; // max number of elements in min heap
     let mut heap = BinaryHeap::<(Reverse<i64>, String)>::with_capacity(capacity);
     let mut write = |timestamp: i64, line: String| {
-        if month.is_some() && Some(get_month(timestamp / 1000)) != month {
+        if month_or_day.is_some() && !match_month_or_day(timestamp, month_or_day.unwrap()) {
             return;
         }
         if heap.len() >= capacity {
@@ -183,7 +190,7 @@ fn parse_lines(
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 3 && args.len() != 4 {
-        eprintln!("Usage: crypto-msg-parser <input_file> <output_file> [yyyy-MM]");
+        eprintln!("Usage: crypto-msg-parser <input_file> <output_file> [yyyy-MM(-dd)]]");
         std::process::exit(1);
     }
 
@@ -209,14 +216,17 @@ fn main() {
         );
         std::process::exit(1);
     }
-    let month = if args.len() == 4 {
+    let month_or_day = if args.len() == 4 {
         let m: &'static str = Box::leak(args[3].clone().into_boxed_str());
-        let re = Regex::new(r"^\d{4}-\d{2}$").unwrap();
+        let re = Regex::new(r"^\d{4}-\d{2}(-\d{2})?$").unwrap();
         if !re.is_match(m) {
-            eprintln!("{} is invalid, month should be yyyy-MM", m);
+            eprintln!(
+                "{} is invalid, timestamp should be yyyy-MM or yyyy-MM-dd",
+                m
+            );
             std::process::exit(1);
         }
-        Some(m.to_string())
+        Some(m)
     } else {
         None
     };
@@ -251,7 +261,8 @@ fn main() {
         Box::new(std::io::BufWriter::new(f_out))
     };
 
-    let (error_lines, total_lines) = parse_lines(buf_reader.as_mut(), writer.as_mut(), month);
+    let (error_lines, total_lines) =
+        parse_lines(buf_reader.as_mut(), writer.as_mut(), month_or_day);
     let error_ratio = (error_lines as f64) / (total_lines as f64);
     if error_ratio > 0.01 {
         eprintln!(
