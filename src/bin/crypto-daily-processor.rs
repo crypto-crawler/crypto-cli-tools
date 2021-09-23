@@ -230,13 +230,16 @@ where
                             _ => panic!("Unknown msg_type {}", msg.msg_type),
                         };
                     } else {
+                        warn!("{}", line);
                         error_lines += 1;
                     }
                 }
             } else {
+                warn!("{}", line);
                 error_lines += 1;
             }
         } else {
+            error!("malformed file {}", input_file.as_ref().display());
             error_lines += 1;
         }
     }
@@ -267,12 +270,15 @@ where
                     };
                     lines.push((timestamp, line))
                 } else {
+                    warn!("{}", line);
                     error_lines += 1;
                 }
             } else {
+                warn!("{}", line);
                 error_lines += 1;
             }
         } else {
+            error!("malformed file {}", input_file.as_ref().display());
             error_lines += 1;
         }
     }
