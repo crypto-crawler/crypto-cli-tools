@@ -1,6 +1,8 @@
 # crypto-cli-tools
 
-A collection of CLI tools to process cryptocurrency data
+A collection of CLI tools to process cryptocurrency data.
+
+Install: `RUSTFLAGS="-C target-cpu=native" cargo install crypto-cli-tools`
 
 ## crypto-msg-parser
 
