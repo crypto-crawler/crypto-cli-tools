@@ -50,12 +50,10 @@ fn get_day(unix_timestamp: i64) -> String {
 #[derive(Clone)]
 #[allow(clippy::type_complexity)]
 struct Output(
-    Arc<
-        Mutex<(
-            Box<dyn std::io::Write + Send>,
-            Box<dyn std::io::Write + Send>,
-        )>,
-    >,
+    Arc<(
+        Mutex<Box<dyn std::io::Write + Send>>,
+        Mutex<Box<dyn std::io::Write + Send>>,
+    )>,
 );
 
 /// Split a file by symbol and write to multiple files.
@@ -170,18 +168,17 @@ where
                                 };
                                 m.insert(
                                     symbol.clone(),
-                                    Output(Arc::new(Mutex::new((
-                                        Box::new(buf_writer_raw),
-                                        Box::new(buf_writer_parsed),
-                                    )))),
+                                    Output(Arc::new((
+                                        Mutex::new(Box::new(buf_writer_raw)),
+                                        Mutex::new(Box::new(buf_writer_parsed)),
+                                    ))),
                                 );
                             }
                             m.get(&symbol).unwrap().clone()
                         };
-                        let mut writers = output.0.lock().unwrap();
                         // raw
                         if day == get_day((msg.received_at / 1000_u64) as i64) {
-                            writeln!(writers.0, "{}", line).unwrap();
+                            writeln!(output.0 .0.lock().unwrap(), "{}", line).unwrap();
                         }
                         match msg.msg_type {
                             MessageType::L2Event => {
@@ -200,7 +197,7 @@ where
                                         for message in messages {
                                             if get_day(message.timestamp / 1000) == day {
                                                 writeln!(
-                                                    writers.1,
+                                                    output.0 .1.lock().unwrap(),
                                                     "{}",
                                                     serde_json::to_string(&message).unwrap()
                                                 )
@@ -217,7 +214,7 @@ where
                                     for message in messages {
                                         if get_day(message.timestamp / 1000) == day {
                                             writeln!(
-                                                writers.1,
+                                                output.0 .1.lock().unwrap(),
                                                 "{}",
                                                 serde_json::to_string(&message).unwrap()
                                             )
@@ -412,9 +409,8 @@ fn process_files_of_day(
             total_lines += t.1;
         }
         for output in split_files.lock().unwrap().values() {
-            let mut output = output.0.lock().unwrap();
-            output.0.flush().unwrap();
-            output.1.flush().unwrap();
+            output.0 .0.lock().unwrap().flush().unwrap();
+            output.0 .1.lock().unwrap().flush().unwrap();
         }
         let error_ratio = (error_lines as f64) / (total_lines as f64);
         if error_ratio > 0.01 {
