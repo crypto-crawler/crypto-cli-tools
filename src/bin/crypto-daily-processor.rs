@@ -1,20 +1,26 @@
 use regex::Regex;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
 use std::io::prelude::*;
-use std::str::FromStr;
 use std::{
-    collections::{HashMap, HashSet},
+    cmp::Reverse,
+    collections::hash_map::DefaultHasher,
+    collections::HashMap,
     env,
-    hash::Hash,
+    hash::{Hash, Hasher},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    str::FromStr,
+    sync::{
+        mpsc::{
+            self, {Receiver, Sender},
+        },
+        Arc, Mutex,
+    },
     time::Instant,
 };
 
 use chrono::prelude::*;
 use chrono::DateTime;
 use crypto_msg_parser::{extract_symbol, parse_l2, parse_trade, MarketType, MessageType};
+use dashmap::{DashMap, DashSet};
 use flate2::write::GzEncoder;
 use flate2::{read::GzDecoder, Compression};
 use glob::glob;
@@ -22,8 +28,6 @@ use log::*;
 use rlimit::{setrlimit, Resource};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::mpsc;
-use std::sync::mpsc::{Receiver, Sender};
 use threadpool::ThreadPool;
 
 #[derive(Serialize, Deserialize)]
@@ -56,6 +60,13 @@ struct Output(
     )>,
 );
 
+fn is_blocked_market(market_type: MarketType) -> bool {
+    market_type == MarketType::QuantoFuture
+        || market_type == MarketType::QuantoSwap
+        || market_type == MarketType::Move
+        || market_type == MarketType::BVOL
+}
+
 /// Split a file by symbol and write to multiple files.
 ///
 /// This function does split, dedup and parse together, and it is
@@ -76,8 +87,8 @@ fn split_file<P>(
     day: String,
     output_dir_raw: P,
     output_dir_parsed: P,
-    split_files: Arc<Mutex<HashMap<String, Output>>>,
-    visited: Arc<Mutex<HashSet<u64>>>,
+    split_files: Arc<DashMap<String, Output>>,
+    visited: Arc<DashSet<u64>>,
 ) -> (i64, i64)
 where
     P: AsRef<Path>,
@@ -108,14 +119,12 @@ where
                         msg.json.hash(&mut hasher);
                         hasher.finish()
                     };
-                    let mut visited = visited.lock().unwrap();
                     visited.insert(hashcode)
                 };
                 if is_new {
                     if let Some(symbol) = extract_symbol(exchange, market_type, &msg.json) {
                         let output = {
-                            let mut m = split_files.lock().unwrap();
-                            if !m.contains_key(&symbol) {
+                            if !split_files.contains_key(&symbol) {
                                 let buf_writer_raw = {
                                     let output_file_name = format!(
                                         "{}.{}.{}.{}.{}.json.gz",
@@ -139,6 +148,7 @@ where
                                         Compression::default(),
                                     ))
                                 };
+
                                 let buf_writer_parsed = {
                                     let pair =
                                         crypto_pair::normalize_pair(&symbol, exchange).unwrap();
@@ -166,7 +176,7 @@ where
                                         Compression::default(),
                                     ))
                                 };
-                                m.insert(
+                                split_files.insert(
                                     symbol.clone(),
                                     Output(Arc::new((
                                         Mutex::new(Box::new(buf_writer_raw)),
@@ -174,7 +184,8 @@ where
                                     ))),
                                 );
                             }
-                            m.get(&symbol).unwrap().clone()
+                            let entry = split_files.get(&symbol).unwrap();
+                            entry.value().clone()
                         };
                         // raw
                         if day == get_day((msg.received_at / 1000_u64) as i64) {
@@ -183,11 +194,7 @@ where
                         match msg.msg_type {
                             MessageType::L2Event => {
                                 // Skip unsupported markets
-                                if market_type != MarketType::QuantoFuture
-                                    && market_type == MarketType::QuantoSwap
-                                    && market_type == MarketType::Move
-                                    && market_type == MarketType::BVOL
-                                {
+                                if !is_blocked_market(market_type) {
                                     if let Ok(messages) = parse_l2(
                                         exchange,
                                         msg.market_type,
@@ -361,10 +368,10 @@ fn process_files_of_day(
         #[allow(clippy::type_complexity)]
         let (tx, rx): (Sender<(i64, i64)>, Receiver<(i64, i64)>) = mpsc::channel();
         let start_timstamp = Instant::now();
-        // small files get processed first
-        paths.sort_by_cached_key(|path| std::fs::metadata(path).unwrap().len());
-        let visited: Arc<Mutex<HashSet<u64>>> = Arc::new(Mutex::new(HashSet::new()));
-        let split_files: Arc<Mutex<HashMap<String, Output>>> = Arc::new(Mutex::new(HashMap::new()));
+        // Larger files get processed first
+        paths.sort_by_cached_key(|path| Reverse(std::fs::metadata(path).unwrap().len()));
+        let visited: Arc<DashSet<u64>> = Arc::new(DashSet::new());
+        let split_files: Arc<DashMap<String, Output>> = Arc::new(DashMap::new());
         for path in paths {
             let file_name = path.as_path().file_name().unwrap();
             let v: Vec<&str> = file_name.to_str().unwrap().split('.').collect();
@@ -408,7 +415,8 @@ fn process_files_of_day(
             error_lines += t.0;
             total_lines += t.1;
         }
-        for output in split_files.lock().unwrap().values() {
+        for entry in split_files.iter() {
+            let output = entry.value();
             output.0 .0.lock().unwrap().flush().unwrap();
             output.0 .1.lock().unwrap().flush().unwrap();
         }
@@ -454,10 +462,18 @@ fn process_files_of_day(
             .unwrap()
             .filter_map(Result::ok)
             .collect();
-        if paths_parsed.is_empty() {
-            warn!("There are no files of pattern {}", glob_pattern);
-            return false;
-        }
+
+        let mut paths = if is_blocked_market(market_type) {
+            for path in paths_parsed {
+                std::fs::remove_file(path).unwrap();
+            }
+            paths_raw
+        } else {
+            paths_raw
+                .into_iter()
+                .chain(paths_parsed.into_iter())
+                .collect()
+        };
 
         info!(
             "Started sort {} {} {} {}",
@@ -465,12 +481,8 @@ fn process_files_of_day(
         );
         #[allow(clippy::type_complexity)]
         let (tx, rx): (Sender<(i64, i64)>, Receiver<(i64, i64)>) = mpsc::channel();
-        let mut paths: Vec<PathBuf> = paths_raw
-            .into_iter()
-            .chain(paths_parsed.into_iter())
-            .collect();
         let start_timstamp = Instant::now();
-        // small files get processed first
+        // Smaller files get processed first
         paths.sort_by_cached_key(|path| std::fs::metadata(path).unwrap().len());
         for input_file in paths {
             let file_name = input_file.as_path().file_name().unwrap();
