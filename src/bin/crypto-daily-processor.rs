@@ -47,6 +47,7 @@ fn get_day(unix_timestamp: i64) -> String {
 }
 
 // Output to a raw file and a parsed file.
+#[derive(Clone)]
 #[allow(clippy::type_complexity)]
 struct Output(
     Arc<
@@ -114,8 +115,8 @@ where
                 };
                 if is_new {
                     if let Some(symbol) = extract_symbol(exchange, market_type, &msg.json) {
-                        let mut m = split_files.lock().unwrap();
-                        let mut output = {
+                        let output = {
+                            let mut m = split_files.lock().unwrap();
                             if !m.contains_key(&symbol) {
                                 let buf_writer_raw = {
                                     let output_file_name = format!(
@@ -175,14 +176,12 @@ where
                                     )))),
                                 );
                             }
-                            m.get(&symbol).unwrap()
-                        }
-                        .0
-                        .lock()
-                        .unwrap();
+                            m.get(&symbol).unwrap().clone()
+                        };
+                        let mut writers = output.0.lock().unwrap();
                         // raw
                         if day == get_day((msg.received_at / 1000_u64) as i64) {
-                            writeln!(output.0, "{}", line).unwrap();
+                            writeln!(writers.0, "{}", line).unwrap();
                         }
                         match msg.msg_type {
                             MessageType::L2Event => {
@@ -201,7 +200,7 @@ where
                                         for message in messages {
                                             if get_day(message.timestamp / 1000) == day {
                                                 writeln!(
-                                                    output.1,
+                                                    writers.1,
                                                     "{}",
                                                     serde_json::to_string(&message).unwrap()
                                                 )
@@ -218,7 +217,7 @@ where
                                     for message in messages {
                                         if get_day(message.timestamp / 1000) == day {
                                             writeln!(
-                                                output.1,
+                                                writers.1,
                                                 "{}",
                                                 serde_json::to_string(&message).unwrap()
                                             )
