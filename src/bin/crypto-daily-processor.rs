@@ -366,9 +366,8 @@ fn process_files_of_day(
         let start_timstamp = Instant::now();
         // small files get processed first
         paths.sort_by_cached_key(|path| std::fs::metadata(path).unwrap().len());
-        let mut visited_map: HashMap<String, Arc<Mutex<HashSet<u64>>>> = HashMap::new();
-        let mut split_files_map: HashMap<String, Arc<Mutex<HashMap<String, Output>>>> =
-            HashMap::new();
+        let visited: Arc<Mutex<HashSet<u64>>> = Arc::new(Mutex::new(HashSet::new()));
+        let split_files: Arc<Mutex<HashMap<String, Output>>> = Arc::new(Mutex::new(HashMap::new()));
         for path in paths {
             let file_name = path.as_path().file_name().unwrap();
             let v: Vec<&str> = file_name.to_str().unwrap().split('.').collect();
@@ -387,16 +386,9 @@ fn process_files_of_day(
                 .join(exchange)
                 .join(market_type_str);
             std::fs::create_dir_all(output_dir_parsed.as_path()).unwrap();
-            let key = format!("{}.{}.{}", exchange, market_type_str, msg_type_str);
-            if !visited_map.contains_key(&key) {
-                visited_map.insert(key.clone(), Arc::new(Mutex::new(HashSet::new())));
-            }
-            if !split_files_map.contains_key(&key) {
-                split_files_map.insert(key.clone(), Arc::new(Mutex::new(HashMap::new())));
-            }
 
-            let visited_of_market = visited_map.get(&key).unwrap().clone();
-            let split_files_of_market = split_files_map.get(&key).unwrap().clone();
+            let visited_clone = visited.clone();
+            let split_files_clone = split_files.clone();
             let day_clone = day.to_string();
             let thread_tx = tx.clone();
             thread_pool.execute(move || {
@@ -405,8 +397,8 @@ fn process_files_of_day(
                     day_clone,
                     output_dir_raw.as_path(),
                     output_dir_parsed.as_path(),
-                    split_files_of_market,
-                    visited_of_market,
+                    split_files_clone,
+                    visited_clone,
                 );
                 thread_tx.send(t).unwrap();
             });
@@ -419,12 +411,10 @@ fn process_files_of_day(
             error_lines += t.0;
             total_lines += t.1;
         }
-        for m in split_files_map.values() {
-            for output in m.lock().unwrap().values() {
-                let mut output = output.0.lock().unwrap();
-                output.0.flush().unwrap();
-                output.1.flush().unwrap();
-            }
+        for output in split_files.lock().unwrap().values() {
+            let mut output = output.0.lock().unwrap();
+            output.0.flush().unwrap();
+            output.1.flush().unwrap();
         }
         let error_ratio = (error_lines as f64) / (total_lines as f64);
         if error_ratio > 0.01 {
