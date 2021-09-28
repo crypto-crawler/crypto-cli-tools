@@ -274,6 +274,7 @@ where
         let mut available_memory = sys.available_memory() * 1024;
         while available_memory < estimated_memory_usage {
             let millis = rng.gen_range(1000_u64..5000_u64);
+            debug!("Available memory {} is less than estimated memory {}, sleeping for {} milliseconds", available_memory, estimated_memory_usage, millis);
             std::thread::sleep(Duration::from_millis(millis));
             sys.refresh_memory();
             available_memory = sys.available_memory() * 1024;
