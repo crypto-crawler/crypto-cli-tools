@@ -383,6 +383,12 @@ where
             }
         }
     } else {
+        error!(
+            "{} error lines out of {} total lines for {}",
+            error_lines,
+            total_lines,
+            output_file.as_ref().display()
+        );
         // cleanup, optional
         if use_pixz {
             let json_file = {
@@ -580,7 +586,7 @@ fn process_files_of_day(
                 groups.get_mut(key).unwrap().push(path);
             }
             let mut groups: Vec<Vec<PathBuf>> = groups.values().cloned().collect();
-            // Smaller days get processed first
+            // Smaller groups get processed first
             groups.sort_by_cached_key(|group| {
                 group
                     .iter()
