@@ -1,5 +1,6 @@
 use regex::Regex;
 use std::io::prelude::*;
+use std::time::Duration;
 use std::{
     cmp::Reverse,
     collections::hash_map::DefaultHasher,
@@ -25,9 +26,11 @@ use flate2::write::GzEncoder;
 use flate2::{read::GzDecoder, Compression};
 use glob::glob;
 use log::*;
+use rand::Rng;
 use rlimit::{setrlimit, Resource};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sysinfo::{RefreshKind, System, SystemExt};
 use threadpool::ThreadPool;
 
 #[derive(Serialize, Deserialize)]
@@ -255,8 +258,29 @@ where
 {
     assert!(input_file.as_ref().to_str().unwrap().ends_with(".json.gz"));
     assert!(output_file.as_ref().to_str().unwrap().ends_with(".json.xz"));
-    let f_in = std::fs::File::open(&input_file)
-        .unwrap_or_else(|_| panic!("{:?} does not exist", input_file.as_ref().display()));
+    if !input_file.as_ref().exists() {
+        panic!("{:?} does not exist", input_file.as_ref().display());
+    }
+
+    {
+        // wait if memory is not enough, this section is optional
+        let estimated_memory_usage = {
+            let filesize = std::fs::metadata(input_file.as_ref()).unwrap().len();
+            filesize * 5
+        };
+        let mut rng = rand::thread_rng();
+        let mut sys = System::new_with_specifics(RefreshKind::new().with_memory());
+        sys.refresh_memory();
+        let mut available_memory = sys.available_memory() * 1024;
+        while available_memory < estimated_memory_usage {
+            let millis = rng.gen_range(1000_u64..5000_u64);
+            std::thread::sleep(Duration::from_millis(millis));
+            sys.refresh_memory();
+            available_memory = sys.available_memory() * 1024;
+        }
+    }
+
+    let f_in = std::fs::File::open(&input_file).unwrap();
     let buf_reader = std::io::BufReader::new(GzDecoder::new(f_in));
     let mut total_lines = 0;
     let mut error_lines = 0;
