@@ -44,21 +44,22 @@ pub struct Message {
     pub json: String,
 }
 
-fn get_day(unix_timestamp: i64) -> String {
-    let naive = NaiveDateTime::from_timestamp(unix_timestamp, 0);
+fn get_day(timestamp_millis: i64) -> String {
+    let naive = NaiveDateTime::from_timestamp(timestamp_millis / 1000, 0);
     let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
     datetime.format("%Y-%m-%d").to_string()
+}
+
+fn get_hour(timestamp_millis: i64) -> String {
+    let naive = NaiveDateTime::from_timestamp(timestamp_millis / 1000, 0);
+    let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+    datetime.format("%Y-%m-%d-%H").to_string()
 }
 
 // Output to a raw file and a parsed file.
 #[derive(Clone)]
 #[allow(clippy::type_complexity)]
-struct Output(
-    Arc<(
-        Mutex<Box<dyn std::io::Write + Send>>,
-        Mutex<Box<dyn std::io::Write + Send>>,
-    )>,
-);
+struct Output(Arc<Mutex<Box<dyn std::io::Write + Send>>>);
 
 fn is_blocked_market(market_type: MarketType) -> bool {
     market_type == MarketType::QuantoFuture
@@ -123,8 +124,11 @@ where
                 };
                 if is_new {
                     if let Some(symbol) = extract_symbol(exchange, market_type, &msg.json) {
-                        let output = {
-                            if !split_files.contains_key(&symbol) {
+                        // raw
+                        if day == get_day(msg.received_at as i64) {
+                            let hour = get_hour(msg.received_at as i64);
+                            let key = format!("raw.{}.{}", symbol, hour);
+                            if !split_files.contains_key(&key) {
                                 let buf_writer_raw = {
                                     let output_file_name = format!(
                                         "{}.{}.{}.{}.{}.json.gz",
@@ -132,7 +136,7 @@ where
                                         market_type_str,
                                         msg_type_str,
                                         re.replace_all(&symbol, "_"),
-                                        day
+                                        hour
                                     );
                                     let f_out = std::fs::OpenOptions::new()
                                         .create(true)
@@ -148,7 +152,22 @@ where
                                         Compression::default(),
                                     ))
                                 };
-
+                                split_files.insert(
+                                    key.clone(),
+                                    Output(Arc::new(Mutex::new(Box::new(buf_writer_raw)))),
+                                );
+                            }
+                            let output = {
+                                let entry = split_files.get(&key).unwrap();
+                                entry.value().clone()
+                            };
+                            writeln!(output.0.lock().unwrap(), "{}", line).unwrap();
+                        }
+                        // parsed
+                        let write_parsed = |json: String, timestamp: i64| {
+                            let hour = get_hour(timestamp);
+                            let key = format!("parsed.{}.{}", symbol, hour);
+                            if !split_files.contains_key(&key) {
                                 let buf_writer_parsed = {
                                     let pair =
                                         crypto_pair::normalize_pair(&symbol, exchange).unwrap();
@@ -160,7 +179,7 @@ where
                                         msg_type_str,
                                         re.replace_all(&pair, "_"),
                                         re.replace_all(&symbol, "_"),
-                                        day
+                                        hour
                                     );
                                     let f_out = std::fs::OpenOptions::new()
                                         .create(true)
@@ -177,20 +196,17 @@ where
                                     ))
                                 };
                                 split_files.insert(
-                                    symbol.clone(),
-                                    Output(Arc::new((
-                                        Mutex::new(Box::new(buf_writer_raw)),
-                                        Mutex::new(Box::new(buf_writer_parsed)),
-                                    ))),
+                                    key.clone(),
+                                    Output(Arc::new(Mutex::new(Box::new(buf_writer_parsed)))),
                                 );
                             }
-                            let entry = split_files.get(&symbol).unwrap();
-                            entry.value().clone()
+                            let output = {
+                                let entry = split_files.get(&key).unwrap();
+                                entry.value().clone()
+                            };
+                            writeln!(output.0.lock().unwrap(), "{}", json).unwrap();
                         };
-                        // raw
-                        if day == get_day((msg.received_at / 1000_u64) as i64) {
-                            writeln!(output.0 .0.lock().unwrap(), "{}", line).unwrap();
-                        }
+
                         match msg.msg_type {
                             MessageType::L2Event => {
                                 // Skip unsupported markets
@@ -202,13 +218,11 @@ where
                                         Some(msg.received_at as i64),
                                     ) {
                                         for message in messages {
-                                            if get_day(message.timestamp / 1000) == day {
-                                                writeln!(
-                                                    output.0 .1.lock().unwrap(),
-                                                    "{}",
-                                                    serde_json::to_string(&message).unwrap()
-                                                )
-                                                .unwrap();
+                                            if get_day(message.timestamp) == day {
+                                                write_parsed(
+                                                    serde_json::to_string(&message).unwrap(),
+                                                    message.timestamp,
+                                                );
                                             }
                                         }
                                     }
@@ -219,13 +233,11 @@ where
                                     parse_trade(&msg.exchange, msg.market_type, &msg.json)
                                 {
                                     for message in messages {
-                                        if get_day(message.timestamp / 1000) == day {
-                                            writeln!(
-                                                output.0 .1.lock().unwrap(),
-                                                "{}",
-                                                serde_json::to_string(&message).unwrap()
-                                            )
-                                            .unwrap();
+                                        if get_day(message.timestamp) == day {
+                                            write_parsed(
+                                                serde_json::to_string(&message).unwrap(),
+                                                message.timestamp,
+                                            );
                                         }
                                     }
                                 }
@@ -249,18 +261,18 @@ where
     (error_lines, total_lines)
 }
 
-fn sort_file<P>(input_file: P, output_file: P, use_pixz: bool) -> (i64, i64)
+fn sort_file<P>(input_file: P, writer: &mut dyn std::io::Write) -> (i64, i64)
 where
     P: AsRef<Path>,
 {
     assert!(input_file.as_ref().to_str().unwrap().ends_with(".json.gz"));
-    assert!(output_file.as_ref().to_str().unwrap().ends_with(".json.xz"));
     if !input_file.as_ref().exists() {
         panic!("{:?} does not exist", input_file.as_ref().display());
     }
-
-    let f_in = std::fs::File::open(&input_file).unwrap();
-    let buf_reader = std::io::BufReader::new(GzDecoder::new(f_in));
+    let buf_reader = {
+        let f_in = std::fs::File::open(&input_file).unwrap();
+        std::io::BufReader::new(GzDecoder::new(f_in))
+    };
     let mut total_lines = 0;
     let mut error_lines = 0;
     let mut lines: Vec<(i64, String)> = Vec::new();
@@ -291,41 +303,73 @@ where
     if error_lines == 0 {
         lines.sort_by_key(|x| x.0); // sort by timestamp
 
-        if !use_pixz {
-            let mut writer = {
-                let f_out = std::fs::OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(output_file)
-                    .unwrap();
-                let e = xz2::write::XzEncoder::new(f_out, 9);
-                std::io::BufWriter::new(e)
-            };
-            for line in lines {
-                writeln!(writer, "{}", line.1).unwrap();
-            }
-            writer.flush().unwrap();
-        } else {
+        for line in lines {
+            writeln!(writer, "{}", line.1).unwrap();
+        }
+        writer.flush().unwrap();
+    }
+    (error_lines, total_lines)
+}
+
+fn sort_files<P>(mut hourly_files: Vec<P>, output_file: P, use_pixz: bool) -> (i64, i64)
+where
+    P: AsRef<Path>,
+{
+    for input_file in hourly_files.iter() {
+        assert!(input_file.as_ref().to_str().unwrap().ends_with(".json.gz"));
+        if !input_file.as_ref().exists() {
+            panic!("{:?} does not exist", input_file.as_ref().display());
+        }
+    }
+    if hourly_files.len() < 24 {
+        warn!(
+            "There are only {} files for {}",
+            hourly_files.len(),
+            output_file.as_ref().display()
+        );
+    }
+    hourly_files.sort_by(|a, b| a.as_ref().cmp(b.as_ref()));
+    assert!(output_file.as_ref().to_str().unwrap().ends_with(".json.xz"));
+
+    let mut writer: Box<dyn std::io::Write> = if !use_pixz {
+        let f_out = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(output_file.as_ref())
+            .unwrap();
+        let e = xz2::write::XzEncoder::new(f_out, 9);
+        Box::new(std::io::BufWriter::new(e))
+    } else {
+        let json_file = {
+            let output_dir = output_file.as_ref().parent().unwrap().to_path_buf();
+            let filename = output_file.as_ref().file_name().unwrap().to_str().unwrap();
+            output_dir.join(&filename[..filename.len() - 3])
+        };
+        let f_out = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(json_file.as_path())
+            .unwrap();
+        Box::new(std::io::BufWriter::new(f_out))
+    };
+
+    let mut total_lines = 0;
+    let mut error_lines = 0;
+    for input_file in hourly_files.iter() {
+        let (e, t) = sort_file(input_file, writer.as_mut());
+        total_lines += t;
+        error_lines += e;
+    }
+    drop(writer);
+    if error_lines == 0 {
+        if use_pixz {
             let json_file = {
                 let output_dir = output_file.as_ref().parent().unwrap().to_path_buf();
                 let filename = output_file.as_ref().file_name().unwrap().to_str().unwrap();
                 output_dir.join(&filename[..filename.len() - 3])
             };
-            let mut writer = {
-                let f_out = std::fs::OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(json_file.as_path())
-                    .unwrap();
-                std::io::BufWriter::new(f_out)
-            };
-            for line in lines {
-                writeln!(writer, "{}", line.1).unwrap();
-            }
-            writer.flush().unwrap();
-            drop(writer);
             match std::process::Command::new("pixz")
                 .args(["-9", json_file.as_path().to_str().unwrap()])
                 .output()
@@ -338,6 +382,20 @@ where
                 Err(err) => panic!("{}", err),
             }
         }
+    } else {
+        // cleanup, optional
+        if use_pixz {
+            let json_file = {
+                let output_dir = output_file.as_ref().parent().unwrap().to_path_buf();
+                let filename = output_file.as_ref().file_name().unwrap().to_str().unwrap();
+                output_dir.join(&filename[..filename.len() - 3])
+            };
+            std::fs::remove_file(json_file.as_path()).unwrap();
+        } else {
+            std::fs::remove_file(output_file.as_ref()).unwrap();
+        }
+    }
+    for input_file in hourly_files {
         std::fs::remove_file(input_file).unwrap();
     }
     (error_lines, total_lines)
@@ -453,8 +511,7 @@ fn process_files_of_day(
         }
         for entry in split_files.iter() {
             let output = entry.value();
-            output.0 .0.lock().unwrap().flush().unwrap();
-            output.0 .1.lock().unwrap().flush().unwrap();
+            output.0.lock().unwrap().flush().unwrap();
         }
         let error_ratio = (error_lines as f64) / (total_lines as f64);
         if error_ratio > 0.01 {
@@ -478,7 +535,7 @@ fn process_files_of_day(
     // sort by timestamp
     {
         let glob_pattern = format!(
-            "{}/**/{}.{}.{}.*.{}.json.gz",
+            "{}/**/{}.{}.{}.*.{}-??.json.gz",
             output_dir_raw, exchange, market_type, msg_type, day
         );
         let paths_raw: Vec<PathBuf> = glob(&glob_pattern)
@@ -491,7 +548,7 @@ fn process_files_of_day(
         }
 
         let glob_pattern = format!(
-            "{}/**/{}.{}.{}.*.{}.json.gz",
+            "{}/**/{}.{}.{}.*.{}-??.json.gz",
             output_dir_parsed, exchange, market_type, msg_type, day
         );
         let paths_parsed: Vec<PathBuf> = glob(&glob_pattern)
@@ -499,7 +556,7 @@ fn process_files_of_day(
             .filter_map(Result::ok)
             .collect();
 
-        let mut paths = if is_blocked_market(market_type) {
+        let paths = if is_blocked_market(market_type) {
             for path in paths_parsed {
                 std::fs::remove_file(path).unwrap();
             }
@@ -511,6 +568,28 @@ fn process_files_of_day(
                 .collect()
         };
 
+        let paths_by_day = {
+            // group by day
+            let mut groups: HashMap<String, Vec<PathBuf>> = HashMap::new();
+            for path in paths {
+                let file_name = path.as_path().file_name().unwrap().to_str().unwrap();
+                let key = &file_name[0..(file_name.len() - "-??.json.gz".len())];
+                if !groups.contains_key(key) {
+                    groups.insert(key.to_string(), vec![]);
+                }
+                groups.get_mut(key).unwrap().push(path);
+            }
+            let mut groups: Vec<Vec<PathBuf>> = groups.values().cloned().collect();
+            // Smaller days get processed first
+            groups.sort_by_cached_key(|group| {
+                group
+                    .iter()
+                    .map(|file| std::fs::metadata(file).unwrap().len())
+                    .sum::<u64>()
+            });
+            groups
+        };
+
         info!(
             "Started sort {} {} {} {}",
             exchange, market_type, msg_type, day
@@ -518,30 +597,29 @@ fn process_files_of_day(
         #[allow(clippy::type_complexity)]
         let (tx, rx): (Sender<(i64, i64)>, Receiver<(i64, i64)>) = mpsc::channel();
         let start_timstamp = Instant::now();
-        // Smaller files get processed first
-        paths.sort_by_cached_key(|path| std::fs::metadata(path).unwrap().len());
-        let percentile_90 = ((paths.len() as f64) * 0.9) as usize;
+        let percentile_90 = ((paths_by_day.len() as f64) * 0.9) as usize;
         let pixz_exists = Path::new("/usr/bin/pixz").exists();
-        for (index, input_file) in paths.into_iter().enumerate() {
-            let file_name = input_file.as_path().file_name().unwrap();
+        for (index, input_files) in paths_by_day.into_iter().enumerate() {
+            let file_name = input_files[0]
+                .as_path()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap();
             let output_file_name = format!(
                 "{}.json.xz",
-                file_name
-                    .to_str()
-                    .unwrap()
-                    .strip_suffix(".json.gz")
-                    .unwrap()
+                &file_name[0..(file_name.len() - "-??.json.gz".len())]
             );
-            let output_file = Path::new(input_file.parent().unwrap()).join(output_file_name);
+            let output_file = Path::new(input_files[0].parent().unwrap()).join(output_file_name);
             let tx_clone = tx.clone();
             if pixz_exists && index >= percentile_90 {
                 thread_pool.execute(move || {
-                    let t = sort_file(input_file, output_file, true);
+                    let t = sort_files(input_files, output_file, true);
                     tx_clone.send(t).unwrap();
                 });
             } else {
                 thread_pool.execute(move || {
-                    let t = sort_file(input_file, output_file, false);
+                    let t = sort_files(input_files, output_file, false);
                     tx_clone.send(t).unwrap();
                 });
             }
@@ -581,7 +659,7 @@ fn process_files_of_day(
 
 fn main() {
     env_logger::init();
-    assert!(setrlimit(Resource::NOFILE, 4096, 4096).is_ok());
+    assert!(setrlimit(Resource::NOFILE, 131072, 131072).is_ok());
 
     let args: Vec<String> = env::args().collect();
     if args.len() != 8 {
