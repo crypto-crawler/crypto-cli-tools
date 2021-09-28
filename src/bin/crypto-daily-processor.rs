@@ -346,7 +346,7 @@ where
             .truncate(true)
             .open(output_file.as_ref())
             .unwrap();
-        let e = xz2::write::XzEncoder::new(f_out, 9);
+        let e = xz2::write::XzEncoder::new(f_out, 6);
         Box::new(std::io::BufWriter::new(e))
     } else {
         let json_file = {
@@ -379,7 +379,7 @@ where
                 output_dir.join(&filename[..filename.len() - 3])
             };
             match std::process::Command::new("pixz")
-                .args(["-9", json_file.as_path().to_str().unwrap()])
+                .args(["-6", json_file.as_path().to_str().unwrap()])
                 .output()
             {
                 Ok(output) => {
