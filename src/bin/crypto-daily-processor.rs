@@ -253,6 +253,16 @@ where
     (error_lines, total_lines)
 }
 
+#[cfg(debug_assertions)]
+fn get_memary_usage(lines: &[(i64, String)]) -> i64 {
+    let mut memary_usage = 0_i64;
+    for (timestamp, line) in lines {
+        memary_usage += std::mem::size_of_val(timestamp) as i64;
+        memary_usage += line.len() as i64;
+    }
+    memary_usage
+}
+
 fn sort_file<P>(
     input_file: P,
     output_file: P,
@@ -272,15 +282,6 @@ where
         let filesize = std::fs::metadata(input_file.as_ref()).unwrap().len();
         (filesize * 5) as i64
     };
-    {
-        // Make this thread sleep if memory is not enough, this section is optional
-        let mut rng = rand::thread_rng();
-        while available_memory.load(Ordering::SeqCst) < estimated_memory_usage {
-            let millis = rng.gen_range(1000_u64..5000_u64);
-            debug!("Available memory {} is less than estimated memory {}, sleeping for {} milliseconds", available_memory.load(Ordering::SeqCst), estimated_memory_usage, millis);
-            std::thread::sleep(Duration::from_millis(millis));
-        }
-    }
 
     let f_in = std::fs::File::open(&input_file).unwrap();
     let buf_reader = std::io::BufReader::new(GzDecoder::new(f_in));
@@ -310,6 +311,16 @@ where
             error!("malformed file {}", input_file.as_ref().display());
             error_lines += 1;
         }
+    }
+    {
+        #[cfg(debug_assertions)]
+        debug!(
+            "file {} size {}, estimated memory usage: {}, real memory usage: {}",
+            input_file.as_ref().display(),
+            std::fs::metadata(input_file.as_ref()).unwrap().len(),
+            estimated_memory_usage,
+            get_memary_usage(&lines)
+        );
     }
     if error_lines == 0 {
         lines.sort_by_key(|x| x.0); // sort by timestamp
@@ -354,9 +365,7 @@ where
                 .output()
             {
                 Ok(output) => {
-                    if output.status.success() {
-                        debug!("{}", String::from_utf8_lossy(&output.stdout));
-                    } else {
+                    if !output.status.success() {
                         panic!("{}", String::from_utf8_lossy(&output.stderr));
                     }
                 }
@@ -560,6 +569,15 @@ fn process_files_of_day(
                     let filesize = std::fs::metadata(input_file.as_path()).unwrap().len();
                     (filesize * 5) as i64
                 };
+                // Stop launching new threads if memory is not enough
+                let mut rng = rand::thread_rng();
+                let mut sys = System::new_with_specifics(RefreshKind::new().with_memory()); // for debug only
+                while available_memory.load(Ordering::SeqCst) < estimated_memory_usage {
+                    let millis = rng.gen_range(1000_u64..5000_u64);
+                    sys.refresh_memory();
+                    debug!("Available memory {} {} is less than estimated memory {}, sleeping for {} milliseconds", available_memory.load(Ordering::SeqCst), sys.available_memory() * 1024, estimated_memory_usage, millis);
+                    std::thread::sleep(Duration::from_millis(millis));
+                }
                 available_memory.fetch_sub(estimated_memory_usage, Ordering::SeqCst);
             }
             let file_name = input_file.as_path().file_name().unwrap();
