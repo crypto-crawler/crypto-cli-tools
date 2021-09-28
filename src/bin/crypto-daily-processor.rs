@@ -1,7 +1,5 @@
 use regex::Regex;
 use std::io::prelude::*;
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::time::Duration;
 use std::{
     cmp::Reverse,
     collections::hash_map::DefaultHasher,
@@ -27,11 +25,9 @@ use flate2::write::GzEncoder;
 use flate2::{read::GzDecoder, Compression};
 use glob::glob;
 use log::*;
-use rand::Rng;
 use rlimit::{setrlimit, Resource};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sysinfo::{RefreshKind, System, SystemExt};
 use threadpool::ThreadPool;
 
 #[derive(Serialize, Deserialize)]
@@ -253,22 +249,7 @@ where
     (error_lines, total_lines)
 }
 
-#[cfg(debug_assertions)]
-fn get_memary_usage(lines: &[(i64, String)]) -> i64 {
-    let mut memary_usage = 0_i64;
-    for (timestamp, line) in lines {
-        memary_usage += std::mem::size_of_val(timestamp) as i64;
-        memary_usage += line.len() as i64;
-    }
-    memary_usage
-}
-
-fn sort_file<P>(
-    input_file: P,
-    output_file: P,
-    use_pixz: bool,
-    available_memory: Arc<AtomicI64>,
-) -> (i64, i64)
+fn sort_file<P>(input_file: P, output_file: P, use_pixz: bool) -> (i64, i64)
 where
     P: AsRef<Path>,
 {
@@ -277,11 +258,6 @@ where
     if !input_file.as_ref().exists() {
         panic!("{:?} does not exist", input_file.as_ref().display());
     }
-
-    let estimated_memory_usage = {
-        let filesize = std::fs::metadata(input_file.as_ref()).unwrap().len();
-        (filesize * 5) as i64
-    };
 
     let f_in = std::fs::File::open(&input_file).unwrap();
     let buf_reader = std::io::BufReader::new(GzDecoder::new(f_in));
@@ -311,16 +287,6 @@ where
             error!("malformed file {}", input_file.as_ref().display());
             error_lines += 1;
         }
-    }
-    {
-        #[cfg(debug_assertions)]
-        debug!(
-            "file {} size {}, estimated memory usage: {}, real memory usage: {}",
-            input_file.as_ref().display(),
-            std::fs::metadata(input_file.as_ref()).unwrap().len(),
-            estimated_memory_usage,
-            get_memary_usage(&lines)
-        );
     }
     if error_lines == 0 {
         lines.sort_by_key(|x| x.0); // sort by timestamp
@@ -374,7 +340,6 @@ where
         }
         std::fs::remove_file(input_file).unwrap();
     }
-    available_memory.fetch_add(estimated_memory_usage, Ordering::SeqCst);
     (error_lines, total_lines)
 }
 
@@ -557,29 +522,7 @@ fn process_files_of_day(
         paths.sort_by_cached_key(|path| std::fs::metadata(path).unwrap().len());
         let percentile_90 = ((paths.len() as f64) * 0.9) as usize;
         let pixz_exists = Path::new("/usr/bin/pixz").exists();
-        let available_memory = {
-            let mut sys = System::new_with_specifics(RefreshKind::new().with_memory());
-            sys.refresh_memory();
-            let available_memory = sys.available_memory() * 1024;
-            Arc::new(AtomicI64::new(available_memory as i64))
-        };
         for (index, input_file) in paths.into_iter().enumerate() {
-            {
-                let estimated_memory_usage = {
-                    let filesize = std::fs::metadata(input_file.as_path()).unwrap().len();
-                    (filesize * 5) as i64
-                };
-                // Stop launching new threads if memory is not enough
-                let mut rng = rand::thread_rng();
-                let mut sys = System::new_with_specifics(RefreshKind::new().with_memory()); // for debug only
-                while available_memory.load(Ordering::SeqCst) < estimated_memory_usage {
-                    let millis = rng.gen_range(1000_u64..5000_u64);
-                    sys.refresh_memory();
-                    debug!("Available memory {} {} is less than estimated memory {}, sleeping for {} milliseconds", available_memory.load(Ordering::SeqCst), sys.available_memory() * 1024, estimated_memory_usage, millis);
-                    std::thread::sleep(Duration::from_millis(millis));
-                }
-                available_memory.fetch_sub(estimated_memory_usage, Ordering::SeqCst);
-            }
             let file_name = input_file.as_path().file_name().unwrap();
             let output_file_name = format!(
                 "{}.json.xz",
@@ -591,15 +534,14 @@ fn process_files_of_day(
             );
             let output_file = Path::new(input_file.parent().unwrap()).join(output_file_name);
             let tx_clone = tx.clone();
-            let available_memory_clone = available_memory.clone();
             if pixz_exists && index >= percentile_90 {
                 thread_pool.execute(move || {
-                    let t = sort_file(input_file, output_file, true, available_memory_clone);
+                    let t = sort_file(input_file, output_file, true);
                     tx_clone.send(t).unwrap();
                 });
             } else {
                 thread_pool.execute(move || {
-                    let t = sort_file(input_file, output_file, false, available_memory_clone);
+                    let t = sort_file(input_file, output_file, false);
                     tx_clone.send(t).unwrap();
                 });
             }
