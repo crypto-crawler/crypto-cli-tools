@@ -263,7 +263,7 @@ where
     }
 
     {
-        // wait if memory is not enough, this section is optional
+        // Make this thread sleep if memory is not enough, this section is optional
         let estimated_memory_usage = {
             let filesize = std::fs::metadata(input_file.as_ref()).unwrap().len();
             filesize * 5
