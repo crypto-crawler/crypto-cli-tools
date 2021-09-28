@@ -1,5 +1,6 @@
 use regex::Regex;
 use std::io::prelude::*;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use std::{
     cmp::Reverse,
@@ -252,7 +253,12 @@ where
     (error_lines, total_lines)
 }
 
-fn sort_file<P>(input_file: P, output_file: P, use_pixz: bool) -> (i64, i64)
+fn sort_file<P>(
+    input_file: P,
+    output_file: P,
+    use_pixz: bool,
+    available_memory: Arc<AtomicU64>,
+) -> (i64, i64)
 where
     P: AsRef<Path>,
 {
@@ -262,22 +268,17 @@ where
         panic!("{:?} does not exist", input_file.as_ref().display());
     }
 
+    let estimated_memory_usage = {
+        let filesize = std::fs::metadata(input_file.as_ref()).unwrap().len();
+        filesize * 5
+    };
     {
         // Make this thread sleep if memory is not enough, this section is optional
-        let estimated_memory_usage = {
-            let filesize = std::fs::metadata(input_file.as_ref()).unwrap().len();
-            filesize * 5
-        };
         let mut rng = rand::thread_rng();
-        let mut sys = System::new_with_specifics(RefreshKind::new().with_memory());
-        sys.refresh_memory();
-        let mut available_memory = sys.available_memory() * 1024;
-        while available_memory < estimated_memory_usage {
+        while available_memory.load(Ordering::SeqCst) < estimated_memory_usage {
             let millis = rng.gen_range(1000_u64..5000_u64);
-            debug!("Available memory {} is less than estimated memory {}, sleeping for {} milliseconds", available_memory, estimated_memory_usage, millis);
+            debug!("Available memory {} is less than estimated memory {}, sleeping for {} milliseconds", available_memory.load(Ordering::SeqCst), estimated_memory_usage, millis);
             std::thread::sleep(Duration::from_millis(millis));
-            sys.refresh_memory();
-            available_memory = sys.available_memory() * 1024;
         }
     }
 
@@ -364,6 +365,7 @@ where
         }
         std::fs::remove_file(input_file).unwrap();
     }
+    available_memory.fetch_add(estimated_memory_usage, Ordering::SeqCst);
     (error_lines, total_lines)
 }
 
@@ -546,7 +548,20 @@ fn process_files_of_day(
         paths.sort_by_cached_key(|path| std::fs::metadata(path).unwrap().len());
         let percentile_90 = ((paths.len() as f64) * 0.9) as usize;
         let pixz_exists = Path::new("/usr/bin/pixz").exists();
+        let available_memory = {
+            let mut sys = System::new_with_specifics(RefreshKind::new().with_memory());
+            sys.refresh_memory();
+            let available_memory = sys.available_memory() * 1024;
+            Arc::new(AtomicU64::new(available_memory))
+        };
         for (index, input_file) in paths.into_iter().enumerate() {
+            {
+                let estimated_memory_usage = {
+                    let filesize = std::fs::metadata(input_file.as_path()).unwrap().len();
+                    filesize * 5
+                };
+                available_memory.fetch_sub(estimated_memory_usage, Ordering::SeqCst);
+            }
             let file_name = input_file.as_path().file_name().unwrap();
             let output_file_name = format!(
                 "{}.json.xz",
@@ -557,16 +572,17 @@ fn process_files_of_day(
                     .unwrap()
             );
             let output_file = Path::new(input_file.parent().unwrap()).join(output_file_name);
-            let thread_tx = tx.clone();
+            let tx_clone = tx.clone();
+            let available_memory_clone = available_memory.clone();
             if pixz_exists && index >= percentile_90 {
                 thread_pool.execute(move || {
-                    let t = sort_file(input_file, output_file, true);
-                    thread_tx.send(t).unwrap();
+                    let t = sort_file(input_file, output_file, true, available_memory_clone);
+                    tx_clone.send(t).unwrap();
                 });
             } else {
                 thread_pool.execute(move || {
-                    let t = sort_file(input_file, output_file, false);
-                    thread_tx.send(t).unwrap();
+                    let t = sort_file(input_file, output_file, false, available_memory_clone);
+                    tx_clone.send(t).unwrap();
                 });
             }
         }
