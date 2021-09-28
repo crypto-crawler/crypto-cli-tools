@@ -249,7 +249,7 @@ where
     (error_lines, total_lines)
 }
 
-fn sort_file<P>(input_file: P, output_file: P) -> (i64, i64)
+fn sort_file<P>(input_file: P, output_file: P, use_pixz: bool) -> (i64, i64)
 where
     P: AsRef<Path>,
 {
@@ -288,20 +288,55 @@ where
     if error_lines == 0 {
         lines.sort_by_key(|x| x.0); // sort by timestamp
 
-        let mut writer = {
-            let f_out = std::fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(output_file)
-                .unwrap();
-            let e = xz2::write::XzEncoder::new(f_out, 9);
-            std::io::BufWriter::new(e)
-        };
-        for line in lines {
-            writeln!(writer, "{}", line.1).unwrap();
+        if !use_pixz {
+            let mut writer = {
+                let f_out = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(output_file)
+                    .unwrap();
+                let e = xz2::write::XzEncoder::new(f_out, 9);
+                std::io::BufWriter::new(e)
+            };
+            for line in lines {
+                writeln!(writer, "{}", line.1).unwrap();
+            }
+            writer.flush().unwrap();
+        } else {
+            let json_file = {
+                let output_dir = output_file.as_ref().parent().unwrap().to_path_buf();
+                let filename = output_file.as_ref().file_name().unwrap().to_str().unwrap();
+                output_dir.join(&filename[..filename.len() - 3])
+            };
+            let mut writer = {
+                let f_out = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(json_file.as_path())
+                    .unwrap();
+                std::io::BufWriter::new(f_out)
+            };
+            for line in lines {
+                writeln!(writer, "{}", line.1).unwrap();
+            }
+            writer.flush().unwrap();
+            drop(writer);
+            match std::process::Command::new("pixz")
+                .args(["-9", json_file.as_path().to_str().unwrap()])
+                .output()
+            {
+                Ok(output) => {
+                    if output.status.success() {
+                        debug!("{}", String::from_utf8_lossy(&output.stdout));
+                    } else {
+                        panic!("{}", String::from_utf8_lossy(&output.stderr));
+                    }
+                }
+                Err(err) => panic!("{}", err),
+            }
         }
-        writer.flush().unwrap();
         std::fs::remove_file(input_file).unwrap();
     }
     (error_lines, total_lines)
@@ -484,7 +519,9 @@ fn process_files_of_day(
         let start_timstamp = Instant::now();
         // Smaller files get processed first
         paths.sort_by_cached_key(|path| std::fs::metadata(path).unwrap().len());
-        for input_file in paths {
+        let percentile_90 = ((paths.len() as f64) * 0.9) as usize;
+        let pixz_exists = Path::new("/usr/bin/pixz").exists();
+        for (index, input_file) in paths.into_iter().enumerate() {
             let file_name = input_file.as_path().file_name().unwrap();
             let output_file_name = format!(
                 "{}.json.xz",
@@ -496,10 +533,17 @@ fn process_files_of_day(
             );
             let output_file = Path::new(input_file.parent().unwrap()).join(output_file_name);
             let thread_tx = tx.clone();
-            thread_pool.execute(move || {
-                let t = sort_file(input_file, output_file);
-                thread_tx.send(t).unwrap();
-            });
+            if pixz_exists && index >= percentile_90 {
+                thread_pool.execute(move || {
+                    let t = sort_file(input_file, output_file, true);
+                    thread_tx.send(t).unwrap();
+                });
+            } else {
+                thread_pool.execute(move || {
+                    let t = sort_file(input_file, output_file, false);
+                    thread_tx.send(t).unwrap();
+                });
+            }
         }
         thread_pool.join();
         drop(tx); // drop the sender
