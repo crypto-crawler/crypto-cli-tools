@@ -1,6 +1,6 @@
 use regex::Regex;
 use std::io::prelude::*;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 use std::{
     cmp::Reverse,
@@ -257,7 +257,7 @@ fn sort_file<P>(
     input_file: P,
     output_file: P,
     use_pixz: bool,
-    available_memory: Arc<AtomicU64>,
+    available_memory: Arc<AtomicI64>,
 ) -> (i64, i64)
 where
     P: AsRef<Path>,
@@ -270,7 +270,7 @@ where
 
     let estimated_memory_usage = {
         let filesize = std::fs::metadata(input_file.as_ref()).unwrap().len();
-        filesize * 5
+        (filesize * 5) as i64
     };
     {
         // Make this thread sleep if memory is not enough, this section is optional
@@ -552,13 +552,13 @@ fn process_files_of_day(
             let mut sys = System::new_with_specifics(RefreshKind::new().with_memory());
             sys.refresh_memory();
             let available_memory = sys.available_memory() * 1024;
-            Arc::new(AtomicU64::new(available_memory))
+            Arc::new(AtomicI64::new(available_memory as i64))
         };
         for (index, input_file) in paths.into_iter().enumerate() {
             {
                 let estimated_memory_usage = {
                     let filesize = std::fs::metadata(input_file.as_path()).unwrap().len();
-                    filesize * 5
+                    (filesize * 5) as i64
                 };
                 available_memory.fetch_sub(estimated_memory_usage, Ordering::SeqCst);
             }
