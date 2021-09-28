@@ -300,6 +300,7 @@ where
             error_lines += 1;
         }
     }
+    std::fs::remove_file(input_file.as_ref()).unwrap();
     if error_lines == 0 {
         lines.sort_by_key(|x| x.0); // sort by timestamp
 
@@ -307,6 +308,13 @@ where
             writeln!(writer, "{}", line.1).unwrap();
         }
         writer.flush().unwrap();
+    } else {
+        error!(
+            "Found {} malformed lines out of total {} lines in file {}",
+            error_lines,
+            total_lines,
+            input_file.as_ref().display()
+        );
     }
     (error_lines, total_lines)
 }
@@ -384,12 +392,12 @@ where
         }
     } else {
         error!(
-            "{} error lines out of {} total lines for {}",
+            "Found {} malformed lines out of total {} total lines for {}",
             error_lines,
             total_lines,
             output_file.as_ref().display()
         );
-        // cleanup, optional
+        // cleanup
         if use_pixz {
             let json_file = {
                 let output_dir = output_file.as_ref().parent().unwrap().to_path_buf();
@@ -400,9 +408,6 @@ where
         } else {
             std::fs::remove_file(output_file.as_ref()).unwrap();
         }
-    }
-    for input_file in hourly_files {
-        std::fs::remove_file(input_file).unwrap();
     }
     (error_lines, total_lines)
 }
@@ -534,7 +539,7 @@ fn process_files_of_day(
             );
             return false;
         } else {
-            info!("Finished split {} {} {} {}, dropped {} malformed lines out of {} lines, time elapsed {} seconds", exchange, market_type, msg_type, day, error_lines, total_lines, start_timstamp.elapsed().as_secs());
+            info!("Finished split {} {} {} {}, dropped {} malformed lines out of total {} lines, time elapsed {} seconds", exchange, market_type, msg_type, day, error_lines, total_lines, start_timstamp.elapsed().as_secs());
         }
     }
 
@@ -650,7 +655,7 @@ fn process_files_of_day(
             true
         } else {
             error!(
-                "Failed to sort {} {} {} {}, found {} malformed lines out of {} lines, time elapsed {} seconds",
+                "Failed to sort {} {} {} {}, found {} malformed lines out of total {} lines, time elapsed {} seconds",
                 exchange,
                 market_type,
                 msg_type,
