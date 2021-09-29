@@ -1,5 +1,7 @@
 use regex::Regex;
 use std::io::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 use std::{
     cmp::Reverse,
     collections::hash_map::DefaultHasher,
@@ -25,10 +27,13 @@ use flate2::write::GzEncoder;
 use flate2::{read::GzDecoder, Compression};
 use glob::glob;
 use log::*;
+use rand::Rng;
 use rlimit::{setrlimit, Resource};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use threadpool::ThreadPool;
+
+const MAX_PIXZ: usize = 2;
 
 #[derive(Serialize, Deserialize)]
 pub struct Message {
@@ -319,7 +324,13 @@ where
     (error_lines, total_lines)
 }
 
-fn sort_files<P>(mut hourly_files: Vec<P>, output_file: P, use_pixz: bool) -> (i64, i64)
+// Use pixz if use_pixz is true, and semaphore allows only two pixz processes
+fn sort_files<P>(
+    mut hourly_files: Vec<P>,
+    output_file: P,
+    use_pixz: bool,
+    semaphore: Arc<AtomicUsize>,
+) -> (i64, i64)
 where
     P: AsRef<Path>,
 {
@@ -373,6 +384,16 @@ where
     drop(writer);
     if error_lines == 0 {
         if use_pixz {
+            {
+                // Wait for the semaphore which allows only two pixz processes
+                let mut rng = rand::thread_rng();
+                while semaphore.load(Ordering::SeqCst) == 0 {
+                    let millis = rng.gen_range(1000_u64..5000_u64);
+                    debug!("Waiting for semaphore");
+                    std::thread::sleep(Duration::from_millis(millis));
+                }
+                semaphore.fetch_sub(1_usize, Ordering::SeqCst);
+            }
             let json_file = {
                 let output_dir = output_file.as_ref().parent().unwrap().to_path_buf();
                 let filename = output_file.as_ref().file_name().unwrap().to_str().unwrap();
@@ -389,6 +410,7 @@ where
                 }
                 Err(err) => panic!("{}", err),
             }
+            semaphore.fetch_add(1_usize, Ordering::SeqCst);
         }
     } else {
         error!(
@@ -610,6 +632,7 @@ fn process_files_of_day(
         let start_timstamp = Instant::now();
         let percentile_90 = ((paths_by_day.len() as f64) * 0.9) as usize;
         let pixz_exists = Path::new("/usr/bin/pixz").exists();
+        let semaphore = Arc::new(AtomicUsize::new(MAX_PIXZ));
         for (index, input_files) in paths_by_day.into_iter().enumerate() {
             let file_name = input_files[0]
                 .as_path()
@@ -623,14 +646,15 @@ fn process_files_of_day(
             );
             let output_file = Path::new(input_files[0].parent().unwrap()).join(output_file_name);
             let tx_clone = tx.clone();
+            let semaphore_clone = semaphore.clone();
             if pixz_exists && index >= percentile_90 {
                 thread_pool.execute(move || {
-                    let t = sort_files(input_files, output_file, true);
+                    let t = sort_files(input_files, output_file, true, semaphore_clone);
                     tx_clone.send(t).unwrap();
                 });
             } else {
                 thread_pool.execute(move || {
-                    let t = sort_files(input_files, output_file, false);
+                    let t = sort_files(input_files, output_file, false, semaphore_clone);
                     tx_clone.send(t).unwrap();
                 });
             }
