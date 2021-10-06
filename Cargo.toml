@@ -11,7 +11,7 @@ keywords = ["cryptocurrency", "blockchain", "trading"]
 
 [dependencies]
 chrono = "0.4"
-crypto-msg-parser = "1.5.2"
+crypto-msg-parser = "1.5.5"
 crypto-pair = "2.0.6"
 dashmap = "4"
 env_logger = "0.8"

@@ -20,7 +20,7 @@ use std::{
 };
 
 use chrono::prelude::*;
-use chrono::DateTime;
+use chrono::{DateTime, TimeZone, Utc};
 use crypto_msg_parser::{extract_symbol, parse_l2, parse_trade, MarketType, MessageType};
 use dashmap::{DashMap, DashSet};
 use flate2::write::GzEncoder;
@@ -50,15 +50,13 @@ pub struct Message {
 }
 
 fn get_day(timestamp_millis: i64) -> String {
-    let naive = NaiveDateTime::from_timestamp(timestamp_millis / 1000, 0);
-    let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
-    datetime.format("%Y-%m-%d").to_string()
+    let dt = Utc.timestamp(timestamp_millis / 1000, 0);
+    dt.format("%Y-%m-%d").to_string()
 }
 
 fn get_hour(timestamp_millis: i64) -> String {
-    let naive = NaiveDateTime::from_timestamp(timestamp_millis / 1000, 0);
-    let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
-    datetime.format("%Y-%m-%d-%H").to_string()
+    let dt = Utc.timestamp(timestamp_millis / 1000, 0);
+    dt.format("%Y-%m-%d-%H").to_string()
 }
 
 // Output to a raw file and a parsed file.
@@ -129,7 +127,7 @@ fn split_file<P>(
     output_dir_parsed: P,
     split_files: Arc<DashMap<String, Output>>,
     visited: Arc<DashSet<u64>>,
-) -> (i64, i64, i64)
+) -> (i64, i64, i64, i64, i64)
 where
     P: AsRef<Path>,
 {
@@ -143,8 +141,10 @@ where
         .unwrap_or_else(|_| panic!("{:?} does not exist", input_file.as_ref().display()));
     let buf_reader = std::io::BufReader::new(GzDecoder::new(f_in));
     let mut total_lines = 0;
-    let mut new_lines = 0;
+    let mut unique_lines = 0;
+    let mut duplicated_lines = 0;
     let mut error_lines = 0;
+    let mut expired_lines = 0;
     let re = Regex::new(r"[():.\\/]+").unwrap();
     for line in buf_reader.lines() {
         if let Ok(line) = line {
@@ -164,12 +164,12 @@ where
                     visited.insert(hashcode)
                 };
                 if is_new {
-                    new_lines += 1;
                     if let Some(symbol) = extract_symbol(exchange, market_type, &msg.json) {
                         let real_market_type =
                             get_real_market_type(exchange, msg.market_type, &symbol);
                         // raw
                         if day == get_day(msg.received_at as i64) {
+                            unique_lines += 1;
                             let hour = get_hour(msg.received_at as i64);
                             let key = format!("raw.{}.{}.{}", real_market_type, symbol, hour);
                             if !split_files.contains_key(&key) {
@@ -218,6 +218,8 @@ where
                             } else {
                                 writeln!(output.0.lock().unwrap(), "{}", line).unwrap();
                             }
+                        } else {
+                            expired_lines += 1;
                         }
                         // parsed
                         let write_parsed =
@@ -310,6 +312,8 @@ where
                         warn!("{}", line);
                         error_lines += 1;
                     }
+                } else {
+                    duplicated_lines += 1;
                 }
             } else {
                 warn!("{}", line);
@@ -320,7 +324,13 @@ where
             error_lines += 1;
         }
     }
-    (total_lines, new_lines, error_lines)
+    (
+        total_lines,
+        unique_lines,
+        duplicated_lines,
+        error_lines,
+        expired_lines,
+    )
 }
 
 fn sort_file<P>(input_file: P, writer: &mut dyn std::io::Write) -> (i64, i64)
@@ -445,7 +455,7 @@ where
                 // Wait for the semaphore which allows only two pixz processes
                 let mut rng = rand::thread_rng();
                 while semaphore.load(Ordering::SeqCst) == 0 {
-                    let millis = rng.gen_range(1000_u64..5000_u64);
+                    let millis = rng.gen_range(3000_u64..10000_u64);
                     debug!("Waiting for semaphore");
                     std::thread::sleep(Duration::from_millis(millis));
                 }
@@ -567,7 +577,10 @@ fn process_files_of_day(
             exchange, market_type, msg_type, day
         );
         #[allow(clippy::type_complexity)]
-        let (tx, rx): (Sender<(i64, i64, i64)>, Receiver<(i64, i64, i64)>) = mpsc::channel();
+        let (tx, rx): (
+            Sender<(i64, i64, i64, i64, i64)>,
+            Receiver<(i64, i64, i64, i64, i64)>,
+        ) = mpsc::channel();
         let start_timstamp = Instant::now();
         // Larger files get processed first
         paths.sort_by_cached_key(|path| Reverse(std::fs::metadata(path).unwrap().len()));
@@ -608,13 +621,21 @@ fn process_files_of_day(
         thread_pool.join();
         drop(tx); // drop the sender
         let mut total_lines = 0;
-        let mut new_lines = 0;
+        let mut unique_lines = 0;
+        let mut duplicated_lines = 0;
         let mut error_lines = 0;
+        let mut expired_lines = 0;
         for t in rx {
             total_lines += t.0;
-            new_lines += t.1;
-            error_lines += t.2;
+            unique_lines += t.1;
+            duplicated_lines += t.2;
+            error_lines += t.3;
+            expired_lines += t.4;
         }
+        assert_eq!(
+            total_lines,
+            unique_lines + duplicated_lines + error_lines + expired_lines
+        );
         for entry in split_files.iter() {
             let output = entry.value();
             output.0.lock().unwrap().flush().unwrap();
@@ -634,7 +655,7 @@ fn process_files_of_day(
             );
             return false;
         } else {
-            info!("Finished split {} {} {} {}, total {} lines, {} unique lines, {} malformed lines, time elapsed {} seconds", exchange, market_type, msg_type, day, total_lines, new_lines, error_lines, start_timstamp.elapsed().as_secs());
+            info!("Finished split {} {} {} {}, total {} lines, {} unique lines, {} duplicated lines, {} expired lines,  {} malformed lines, time elapsed {} seconds", exchange, market_type, msg_type, day, total_lines, unique_lines, duplicated_lines, expired_lines, error_lines, start_timstamp.elapsed().as_secs());
         }
     }
 
