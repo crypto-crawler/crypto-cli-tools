@@ -171,17 +171,16 @@ where
                         if day == get_day(msg.received_at as i64) {
                             unique_lines += 1;
                             let hour = get_hour(msg.received_at as i64);
-                            let key = format!("raw.{}.{}.{}", real_market_type, symbol, hour);
-                            if !split_files.contains_key(&key) {
+                            let output_file_name = format!(
+                                "{}.{}.{}.{}.{}.json.gz",
+                                exchange,
+                                real_market_type,
+                                msg_type_str,
+                                re.replace_all(&symbol, "_"),
+                                hour
+                            );
+                            if !split_files.contains_key(&output_file_name) {
                                 let buf_writer_raw = {
-                                    let output_file_name = format!(
-                                        "{}.{}.{}.{}.{}.json.gz",
-                                        exchange,
-                                        real_market_type,
-                                        msg_type_str,
-                                        re.replace_all(&symbol, "_"),
-                                        hour
-                                    );
                                     let output_dir = Path::new(output_dir_raw.as_ref())
                                         .join(real_market_type.to_string());
                                     std::fs::create_dir_all(output_dir.as_path()).unwrap();
@@ -190,7 +189,8 @@ where
                                         .write(true)
                                         .truncate(true)
                                         .open(
-                                            Path::new(output_dir.as_path()).join(output_file_name),
+                                            Path::new(output_dir.as_path())
+                                                .join(output_file_name.clone()),
                                         )
                                         .unwrap();
                                     std::io::BufWriter::new(GzEncoder::new(
@@ -199,12 +199,12 @@ where
                                     ))
                                 };
                                 split_files.insert(
-                                    key.clone(),
+                                    output_file_name.clone(),
                                     Output(Arc::new(Mutex::new(Box::new(buf_writer_raw)))),
                                 );
                             }
                             let output = {
-                                let entry = split_files.get(&key).unwrap();
+                                let entry = split_files.get(&output_file_name).unwrap();
                                 entry.value().clone()
                             };
                             if msg.market_type == MarketType::Unknown {
@@ -225,21 +225,18 @@ where
                         let write_parsed =
                             |market_type: MarketType, json: String, timestamp: i64| {
                                 let hour = get_hour(timestamp);
-                                let key = format!("parsed.{}.{}.{}", market_type, symbol, hour);
-                                if !split_files.contains_key(&key) {
+                                let pair = crypto_pair::normalize_pair(&symbol, exchange).unwrap();
+                                let output_file_name = format!(
+                                    "{}.{}.{}.{}.{}.{}.json.gz",
+                                    exchange,
+                                    market_type,
+                                    msg_type_str,
+                                    re.replace_all(&pair, "_"),
+                                    re.replace_all(&symbol, "_"),
+                                    hour
+                                );
+                                if !split_files.contains_key(&output_file_name) {
                                     let buf_writer_parsed = {
-                                        let pair =
-                                            crypto_pair::normalize_pair(&symbol, exchange).unwrap();
-                                        let pair = re.replace_all(&pair, "_");
-                                        let output_file_name = format!(
-                                            "{}.{}.{}.{}.{}.{}.json.gz",
-                                            exchange,
-                                            market_type,
-                                            msg_type_str,
-                                            re.replace_all(&pair, "_"),
-                                            re.replace_all(&symbol, "_"),
-                                            hour
-                                        );
                                         let output_dir = Path::new(output_dir_parsed.as_ref())
                                             .join(market_type.to_string());
                                         std::fs::create_dir_all(output_dir.as_path()).unwrap();
@@ -249,7 +246,7 @@ where
                                             .truncate(true)
                                             .open(
                                                 Path::new(output_dir.as_path())
-                                                    .join(output_file_name),
+                                                    .join(output_file_name.clone()),
                                             )
                                             .unwrap();
                                         std::io::BufWriter::new(GzEncoder::new(
@@ -258,12 +255,12 @@ where
                                         ))
                                     };
                                     split_files.insert(
-                                        key.clone(),
+                                        output_file_name.clone(),
                                         Output(Arc::new(Mutex::new(Box::new(buf_writer_parsed)))),
                                     );
                                 }
                                 let output = {
-                                    let entry = split_files.get(&key).unwrap();
+                                    let entry = split_files.get(&output_file_name).unwrap();
                                     entry.value().clone()
                                 };
                                 writeln!(output.0.lock().unwrap(), "{}", json).unwrap();
