@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 use regex::Regex;
 use std::io::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -61,7 +62,6 @@ fn get_hour(timestamp_millis: i64) -> String {
 
 // Output to a raw file and a parsed file.
 #[derive(Clone)]
-#[allow(clippy::type_complexity)]
 struct Output(Arc<Mutex<Box<dyn std::io::Write + Send>>>);
 
 // Copied from crypto-markets/tests/bitmex.rs
@@ -114,23 +114,18 @@ fn is_blocked_market(market_type: MarketType) -> bool {
 ///
 /// - input_file A `.json.gz` file downloaded from AWS S3
 /// - day `yyyy-MM-dd` string, all messages beyond [day-5min, day+5min] will be dropped
-/// - output_dir_raw Where raw messages will be written to
-/// - output_dir_parsed Where parsed messages will be written to
-/// - split_files A HashMap that tracks opened files, key is `msg.symbol`, value is file of
+/// - output_dir Where raw messages will be written to
+/// - splitted_files A HashMap that tracks opened files, key is `msg.symbol`, value is file of
 ///  `output_dir/exchange.market_type.msg_type.symbol.day.json.gz`. Each `exchange, msg_type, market_type`
-///  has one `split_files` HashMap
-/// - written_to_raw A HashSet for deduplication, each `exchange, msg_type, market_type` has one
-///  `written_to_raw` Hashset
-/// - written_to_parsed A HashSet for deduplication, each `exchange, msg_type, market_type` has one
-///  `written_to_parsed` Hashset
-fn split_file<P>(
+///  has one `splitted_files` HashMap
+/// - visited A HashSet for deduplication, each `exchange, msg_type, market_type` has one
+///  `visited` Hashset
+fn split_file_raw<P>(
     input_file: P,
     day: String,
-    output_dir_raw: P,
-    output_dir_parsed: P,
-    split_files: Arc<DashMap<String, Output>>,
-    written_to_raw: Arc<DashSet<u64>>,
-    written_to_parsed: Arc<DashSet<u64>>,
+    output_dir: P,
+    splitted_files: Arc<DashMap<String, Output>>,
+    visited: Arc<DashSet<u64>>,
 ) -> (i64, i64, i64, i64, i64)
 where
     P: AsRef<Path>,
@@ -169,7 +164,7 @@ where
 
                     if day == get_day(msg.received_at as i64) {
                         // raw
-                        if written_to_raw.insert(hashcode) {
+                        if visited.insert(hashcode) {
                             unique_lines += 1;
                             let hour = get_hour(msg.received_at as i64);
                             let output_file_name = format!(
@@ -180,9 +175,9 @@ where
                                 re.replace_all(&symbol, "_"),
                                 hour
                             );
-                            if !split_files.contains_key(&output_file_name) {
+                            if !splitted_files.contains_key(&output_file_name) {
                                 let buf_writer_raw = {
-                                    let output_dir = Path::new(output_dir_raw.as_ref())
+                                    let output_dir = Path::new(output_dir.as_ref())
                                         .join(real_market_type.to_string());
                                     std::fs::create_dir_all(output_dir.as_path()).unwrap();
                                     let f_out = std::fs::OpenOptions::new()
@@ -199,13 +194,13 @@ where
                                         Compression::default(),
                                     ))
                                 };
-                                split_files.insert(
+                                splitted_files.insert(
                                     output_file_name.clone(),
                                     Output(Arc::new(Mutex::new(Box::new(buf_writer_raw)))),
                                 );
                             }
                             let output = {
-                                let entry = split_files.get(&output_file_name).unwrap();
+                                let entry = splitted_files.get(&output_file_name).unwrap();
                                 entry.value().clone()
                             };
                             if msg.market_type == MarketType::Unknown {
@@ -226,8 +221,72 @@ where
                     } else {
                         expired_lines += 1;
                     }
+                } else {
+                    warn!("No symbol: {}", line);
+                    error_lines += 1;
+                }
+            } else {
+                warn!("{}", line);
+                error_lines += 1;
+            }
+        } else {
+            error!("malformed file {}", input_file.as_ref().display());
+            error_lines += 1;
+        }
+    }
+    (
+        total_lines,
+        unique_lines,
+        duplicated_lines,
+        error_lines,
+        expired_lines,
+    )
+}
 
-                    if written_to_parsed.insert(hashcode) {
+fn split_file_parsed<P>(
+    input_file: P,
+    day: String,
+    output_dir: P,
+    splitted_files: Arc<DashMap<String, Output>>,
+    visited: Arc<DashSet<u64>>,
+) -> (i64, i64, i64, i64, i64)
+where
+    P: AsRef<Path>,
+{
+    let file_name = input_file.as_ref().file_name().unwrap();
+    let v: Vec<&str> = file_name.to_str().unwrap().split('.').collect();
+    let exchange = v[0];
+    let market_type = MarketType::from_str(v[1]).unwrap();
+    let msg_type_str = v[2];
+    let msg_type = MessageType::from_str(msg_type_str).unwrap();
+    let f_in = std::fs::File::open(&input_file)
+        .unwrap_or_else(|_| panic!("{:?} does not exist", input_file.as_ref().display()));
+    let buf_reader = std::io::BufReader::new(GzDecoder::new(f_in));
+    let mut total_lines = 0;
+    let mut unique_lines = 0;
+    let mut duplicated_lines = 0;
+    let mut error_lines = 0;
+    let mut expired_lines = 0;
+    let re = Regex::new(r"[():.\\/]+").unwrap();
+    for line in buf_reader.lines() {
+        if let Ok(line) = line {
+            total_lines += 1;
+            if let Ok(msg) = serde_json::from_str::<Message>(&line) {
+                assert_eq!(msg.exchange, exchange);
+                if market_type != MarketType::Unknown {
+                    assert_eq!(msg.market_type, market_type);
+                }
+                assert_eq!(msg.msg_type, msg_type);
+                let hashcode = {
+                    let mut hasher = DefaultHasher::new();
+                    msg.json.hash(&mut hasher);
+                    hasher.finish()
+                };
+                if let Some(symbol) = extract_symbol(exchange, market_type, &msg.json) {
+                    let real_market_type = get_real_market_type(exchange, msg.market_type, &symbol);
+
+                    if visited.insert(hashcode) {
+                        unique_lines += 1;
                         // parsed
                         let write_parsed =
                             |market_type: MarketType, json: String, timestamp: i64| {
@@ -242,9 +301,9 @@ where
                                     re.replace_all(&symbol, "_"),
                                     hour
                                 );
-                                if !split_files.contains_key(&output_file_name) {
+                                if !splitted_files.contains_key(&output_file_name) {
                                     let buf_writer_parsed = {
-                                        let output_dir = Path::new(output_dir_parsed.as_ref())
+                                        let output_dir = Path::new(output_dir.as_ref())
                                             .join(market_type.to_string());
                                         std::fs::create_dir_all(output_dir.as_path()).unwrap();
                                         let f_out = std::fs::OpenOptions::new()
@@ -261,13 +320,13 @@ where
                                             Compression::default(),
                                         ))
                                     };
-                                    split_files.insert(
+                                    splitted_files.insert(
                                         output_file_name.clone(),
                                         Output(Arc::new(Mutex::new(Box::new(buf_writer_parsed)))),
                                     );
                                 }
                                 let output = {
-                                    let entry = split_files.get(&output_file_name).unwrap();
+                                    let entry = splitted_files.get(&output_file_name).unwrap();
                                     entry.value().clone()
                                 };
                                 writeln!(output.0.lock().unwrap(), "{}", json).unwrap();
@@ -291,6 +350,8 @@ where
                                                     serde_json::to_string(&message).unwrap(),
                                                     message.timestamp,
                                                 );
+                                            } else {
+                                                expired_lines += 1;
                                             }
                                         }
                                     }
@@ -308,12 +369,16 @@ where
                                                 serde_json::to_string(&message).unwrap(),
                                                 message.timestamp,
                                             );
+                                        } else {
+                                            expired_lines += 1;
                                         }
                                     }
                                 }
                             }
                             _ => panic!("Unknown msg_type {}", msg.msg_type),
                         };
+                    } else {
+                        duplicated_lines += 1;
                     }
                 } else {
                     warn!("No symbol: {}", line);
@@ -580,17 +645,23 @@ fn process_files_of_day(
             "Started split {} {} {} {}",
             exchange, market_type, msg_type, day
         );
-        #[allow(clippy::type_complexity)]
-        let (tx, rx): (
+        let (tx_raw, rx_raw): (
+            Sender<(i64, i64, i64, i64, i64)>,
+            Receiver<(i64, i64, i64, i64, i64)>,
+        ) = mpsc::channel();
+        let (tx_parsed, rx_parsed): (
             Sender<(i64, i64, i64, i64, i64)>,
             Receiver<(i64, i64, i64, i64, i64)>,
         ) = mpsc::channel();
         let start_timstamp = Instant::now();
         // Larger files get processed first
         paths.sort_by_cached_key(|path| Reverse(std::fs::metadata(path).unwrap().len()));
+
         let written_to_raw: Arc<DashSet<u64>> = Arc::new(DashSet::new());
         let written_to_parsed: Arc<DashSet<u64>> = Arc::new(DashSet::new());
-        let split_files: Arc<DashMap<String, Output>> = Arc::new(DashMap::new());
+        let splitted_files_raw: Arc<DashMap<String, Output>> = Arc::new(DashMap::new());
+        let splitted_files_parsed: Arc<DashMap<String, Output>> = Arc::new(DashMap::new());
+
         for path in paths {
             let file_name = path.as_path().file_name().unwrap();
             let v: Vec<&str> = file_name.to_str().unwrap().split('.').collect();
@@ -600,69 +671,101 @@ fn process_files_of_day(
             }
             let msg_type_str = v[2];
             assert_eq!(msg_type, MessageType::from_str(msg_type_str).unwrap());
+
             let output_dir_raw = Path::new(output_dir_raw).join(msg_type_str).join(exchange);
             std::fs::create_dir_all(output_dir_raw.as_path()).unwrap();
+
             let output_dir_parsed = Path::new(output_dir_parsed)
                 .join(msg_type_str)
                 .join(exchange);
             std::fs::create_dir_all(output_dir_parsed.as_path()).unwrap();
 
-            let written_to_raw_clone = written_to_raw.clone();
-            let written_to_parsed_clone = written_to_parsed.clone();
-            let split_files_clone = split_files.clone();
+            let path_clone = path.clone();
             let day_clone = day.to_string();
-            let thread_tx = tx.clone();
+            let splitted_files_raw_clone = splitted_files_raw.clone();
+            let written_to_raw_clone = written_to_raw.clone();
+            let tx_raw_clone = tx_raw.clone();
             thread_pool.execute(move || {
-                let t = split_file(
+                let t = split_file_raw(
+                    path_clone,
+                    day_clone,
+                    output_dir_raw,
+                    splitted_files_raw_clone,
+                    written_to_raw_clone,
+                );
+                tx_raw_clone.send(t).unwrap();
+            });
+
+            let day_clone = day.to_string();
+            let splitted_files_parsed_clone = splitted_files_parsed.clone();
+            let written_to_parsed_clone = written_to_parsed.clone();
+            let tx_parsed_clone = tx_parsed.clone();
+            thread_pool.execute(move || {
+                let t = split_file_parsed(
                     path.as_path(),
                     day_clone,
-                    output_dir_raw.as_path(),
                     output_dir_parsed.as_path(),
-                    split_files_clone,
-                    written_to_raw_clone,
+                    splitted_files_parsed_clone,
                     written_to_parsed_clone,
                 );
-                thread_tx.send(t).unwrap();
+                tx_parsed_clone.send(t).unwrap();
             });
         }
         thread_pool.join();
-        drop(tx); // drop the sender
-        let mut total_lines = 0;
-        let mut unique_lines = 0;
-        let mut duplicated_lines = 0;
-        let mut error_lines = 0;
-        let mut expired_lines = 0;
-        for t in rx {
-            total_lines += t.0;
-            unique_lines += t.1;
-            duplicated_lines += t.2;
-            error_lines += t.3;
-            expired_lines += t.4;
-        }
-        assert_eq!(
-            total_lines,
-            unique_lines + duplicated_lines + error_lines + expired_lines
-        );
-        for entry in split_files.iter() {
-            let output = entry.value();
-            output.0.lock().unwrap().flush().unwrap();
-        }
-        let error_ratio = (error_lines as f64) / (total_lines as f64);
-        if error_ratio > 0.01 {
-            // error ratio > 1%
-            error!(
-                "Failed to split {} {} {} {}, because error ratio {}/{}={}% is higher than 1% !",
-                exchange,
-                market_type,
-                msg_type,
-                day,
-                error_lines,
-                total_lines,
-                error_ratio * 100.0
-            );
+        let finishing = move |tx: Sender<(i64, i64, i64, i64, i64)>,
+                              rx: Receiver<(i64, i64, i64, i64, i64)>,
+                              splitted_files: Arc<DashMap<String, Output>>,
+                              is_parsed: bool|
+              -> bool {
+            drop(tx); // drop the sender to unblock receiver
+            let mut total_lines = 0;
+            let mut unique_lines = 0;
+            let mut duplicated_lines = 0;
+            let mut error_lines = 0;
+            let mut expired_lines = 0;
+            for t in rx {
+                total_lines += t.0;
+                unique_lines += t.1;
+                duplicated_lines += t.2;
+                error_lines += t.3;
+                expired_lines += t.4;
+            }
+            if is_parsed {
+                assert_eq!(total_lines, unique_lines + duplicated_lines + error_lines);
+            } else {
+                assert_eq!(
+                    total_lines,
+                    unique_lines + duplicated_lines + error_lines + expired_lines
+                );
+            }
+
+            for entry in splitted_files.iter() {
+                let output = entry.value();
+                output.0.lock().unwrap().flush().unwrap();
+            }
+            let error_ratio = (error_lines as f64) / (total_lines as f64);
+            if error_ratio > 0.01 {
+                // error ratio > 1%
+                error!(
+                    "Failed to split {} {} {} {}, because error ratio {}/{}={}% is higher than 1% !",
+                    exchange,
+                    market_type,
+                    msg_type,
+                    day,
+                    error_lines,
+                    total_lines,
+                    error_ratio * 100.0
+                );
+                false
+            } else {
+                info!("Finished split {} {} {} {}, total {} lines, {} unique lines, {} duplicated lines, {} expired lines,  {} malformed lines, time elapsed {} seconds", exchange, market_type, msg_type, day, total_lines, unique_lines, duplicated_lines, expired_lines, error_lines, start_timstamp.elapsed().as_secs());
+                true
+            }
+        };
+        if !finishing(tx_raw, rx_raw, splitted_files_raw, false)
+            || !finishing(tx_parsed, rx_parsed, splitted_files_parsed, true)
+        {
             return false;
-        } else {
-            info!("Finished split {} {} {} {}, total {} lines, {} unique lines, {} duplicated lines, {} expired lines,  {} malformed lines, time elapsed {} seconds", exchange, market_type, msg_type, day, total_lines, unique_lines, duplicated_lines, expired_lines, error_lines, start_timstamp.elapsed().as_secs());
         }
     }
 
@@ -723,7 +826,6 @@ fn process_files_of_day(
             "Started sort {} {} {} {}",
             exchange, market_type, msg_type, day
         );
-        #[allow(clippy::type_complexity)]
         let (tx, rx): (Sender<(i64, i64)>, Receiver<(i64, i64)>) = mpsc::channel();
         let start_timstamp = Instant::now();
         let percentile_90 = ((paths_by_day.len() as f64) * 0.9) as usize;
