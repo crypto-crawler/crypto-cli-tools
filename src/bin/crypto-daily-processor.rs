@@ -166,15 +166,17 @@ where
                         // raw
                         if visited.insert(hashcode) {
                             unique_lines += 1;
-                            let hour = get_hour(msg.received_at as i64);
-                            let output_file_name = format!(
-                                "{}.{}.{}.{}.{}.json.gz",
-                                exchange,
-                                real_market_type,
-                                msg_type_str,
-                                re.replace_all(&symbol, "_"),
-                                hour
-                            );
+                            let output_file_name = {
+                                let hour = get_hour(msg.received_at as i64);
+                                format!(
+                                    "{}.{}.{}.{}.{}.json.gz",
+                                    exchange,
+                                    real_market_type,
+                                    msg_type_str,
+                                    re.replace_all(&symbol, "_"),
+                                    hour
+                                )
+                            };
                             if !splitted_files.contains_key(&output_file_name) {
                                 let buf_writer_raw = {
                                     let output_dir = Path::new(output_dir.as_ref())
@@ -199,21 +201,15 @@ where
                                     Output(Arc::new(Mutex::new(Box::new(buf_writer_raw)))),
                                 );
                             }
-                            let output = {
-                                let entry = splitted_files.get(&output_file_name).unwrap();
-                                entry.value().clone()
-                            };
+                            let entry = splitted_files.get(&output_file_name).unwrap();
+                            let mut writer = entry.value().0.lock().unwrap();
                             if msg.market_type == MarketType::Unknown {
                                 msg.market_type = real_market_type;
-                                writeln!(
-                                    output.0.lock().unwrap(),
-                                    "{}",
-                                    serde_json::to_string(&msg).unwrap()
-                                )
-                                .unwrap();
+                                writeln!(writer, "{}", serde_json::to_string(&msg).unwrap())
+                                    .unwrap();
                             } else {
                                 assert_eq!(real_market_type, msg.market_type);
-                                writeln!(output.0.lock().unwrap(), "{}", line).unwrap();
+                                writeln!(writer, "{}", line).unwrap();
                             }
                         } else {
                             duplicated_lines += 1;
@@ -290,17 +286,20 @@ where
                         // parsed
                         let write_parsed =
                             |market_type: MarketType, json: String, timestamp: i64| {
-                                let hour = get_hour(timestamp);
-                                let pair = crypto_pair::normalize_pair(&symbol, exchange).unwrap();
-                                let output_file_name = format!(
-                                    "{}.{}.{}.{}.{}.{}.json.gz",
-                                    exchange,
-                                    market_type,
-                                    msg_type_str,
-                                    re.replace_all(&pair, "_"),
-                                    re.replace_all(&symbol, "_"),
-                                    hour
-                                );
+                                let output_file_name = {
+                                    let hour = get_hour(timestamp);
+                                    let pair =
+                                        crypto_pair::normalize_pair(&symbol, exchange).unwrap();
+                                    format!(
+                                        "{}.{}.{}.{}.{}.{}.json.gz",
+                                        exchange,
+                                        market_type,
+                                        msg_type_str,
+                                        re.replace_all(&pair, "_"),
+                                        re.replace_all(&symbol, "_"),
+                                        hour
+                                    )
+                                };
                                 if !splitted_files.contains_key(&output_file_name) {
                                     let buf_writer_parsed = {
                                         let output_dir = Path::new(output_dir.as_ref())
@@ -325,11 +324,9 @@ where
                                         Output(Arc::new(Mutex::new(Box::new(buf_writer_parsed)))),
                                     );
                                 }
-                                let output = {
-                                    let entry = splitted_files.get(&output_file_name).unwrap();
-                                    entry.value().clone()
-                                };
-                                writeln!(output.0.lock().unwrap(), "{}", json).unwrap();
+                                let entry = splitted_files.get(&output_file_name).unwrap();
+                                let mut writer = entry.value().0.lock().unwrap();
+                                writeln!(writer, "{}", json).unwrap();
                             };
 
                         match msg.msg_type {
