@@ -177,32 +177,35 @@ where
                                     hour
                                 )
                             };
-                            if !splitted_files.contains_key(&output_file_name) {
-                                let buf_writer_raw = {
-                                    let output_dir = Path::new(output_dir.as_ref())
-                                        .join(real_market_type.to_string());
-                                    std::fs::create_dir_all(output_dir.as_path()).unwrap();
-                                    let f_out = std::fs::OpenOptions::new()
-                                        .create(true)
-                                        .write(true)
-                                        .truncate(true)
-                                        .open(
-                                            Path::new(output_dir.as_path())
-                                                .join(output_file_name.clone()),
-                                        )
-                                        .unwrap();
-                                    std::io::BufWriter::new(GzEncoder::new(
-                                        f_out,
-                                        Compression::default(),
-                                    ))
-                                };
-                                splitted_files.insert(
-                                    output_file_name.clone(),
-                                    Output(Arc::new(Mutex::new(Box::new(buf_writer_raw)))),
-                                );
-                            }
-                            let entry = splitted_files.get(&output_file_name).unwrap();
-                            let mut writer = entry.value().0.lock().unwrap();
+                            let output = {
+                                let output_dir_clone = output_dir.as_ref().to_path_buf();
+                                // `.entry().or_insert_with()` is atomic, see https://github.com/xacrimon/dashmap/issues/78
+                                let entry = splitted_files
+                                    .entry(output_file_name.clone())
+                                    .or_insert_with(move || {
+                                        let buf_writer_raw = {
+                                            let output_dir =
+                                                output_dir_clone.join(real_market_type.to_string());
+                                            std::fs::create_dir_all(output_dir.as_path()).unwrap();
+                                            let f_out = std::fs::OpenOptions::new()
+                                                .create(true)
+                                                .write(true)
+                                                .truncate(true)
+                                                .open(
+                                                    Path::new(output_dir.as_path())
+                                                        .join(output_file_name),
+                                                )
+                                                .unwrap();
+                                            std::io::BufWriter::new(GzEncoder::new(
+                                                f_out,
+                                                Compression::default(),
+                                            ))
+                                        };
+                                        Output(Arc::new(Mutex::new(Box::new(buf_writer_raw))))
+                                    });
+                                entry.value().clone()
+                            };
+                            let mut writer = output.0.lock().unwrap();
                             if msg.market_type == MarketType::Unknown {
                                 msg.market_type = real_market_type;
                                 writeln!(writer, "{}", serde_json::to_string(&msg).unwrap())
@@ -300,32 +303,38 @@ where
                                         hour
                                     )
                                 };
-                                if !splitted_files.contains_key(&output_file_name) {
-                                    let buf_writer_parsed = {
-                                        let output_dir = Path::new(output_dir.as_ref())
-                                            .join(market_type.to_string());
-                                        std::fs::create_dir_all(output_dir.as_path()).unwrap();
-                                        let f_out = std::fs::OpenOptions::new()
-                                            .create(true)
-                                            .write(true)
-                                            .truncate(true)
-                                            .open(
-                                                Path::new(output_dir.as_path())
-                                                    .join(output_file_name.clone()),
-                                            )
-                                            .unwrap();
-                                        std::io::BufWriter::new(GzEncoder::new(
-                                            f_out,
-                                            Compression::default(),
-                                        ))
-                                    };
-                                    splitted_files.insert(
-                                        output_file_name.clone(),
-                                        Output(Arc::new(Mutex::new(Box::new(buf_writer_parsed)))),
-                                    );
-                                }
-                                let entry = splitted_files.get(&output_file_name).unwrap();
-                                let mut writer = entry.value().0.lock().unwrap();
+                                let output = {
+                                    let output_dir_clone = output_dir.as_ref().to_path_buf();
+                                    // `.entry().or_insert_with()` is atomic, see https://github.com/xacrimon/dashmap/issues/78
+                                    let entry = splitted_files
+                                        .entry(output_file_name.clone())
+                                        .or_insert_with(move || {
+                                            let buf_writer_parsed = {
+                                                let output_dir =
+                                                    output_dir_clone.join(market_type.to_string());
+                                                std::fs::create_dir_all(output_dir.as_path())
+                                                    .unwrap();
+                                                let f_out = std::fs::OpenOptions::new()
+                                                    .create(true)
+                                                    .write(true)
+                                                    .truncate(true)
+                                                    .open(
+                                                        Path::new(output_dir.as_path())
+                                                            .join(output_file_name),
+                                                    )
+                                                    .unwrap();
+                                                std::io::BufWriter::new(GzEncoder::new(
+                                                    f_out,
+                                                    Compression::default(),
+                                                ))
+                                            };
+                                            Output(Arc::new(Mutex::new(Box::new(
+                                                buf_writer_parsed,
+                                            ))))
+                                        });
+                                    entry.value().clone()
+                                };
+                                let mut writer = output.0.lock().unwrap();
                                 writeln!(writer, "{}", json).unwrap();
                             };
 
