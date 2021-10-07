@@ -659,8 +659,8 @@ fn process_files_of_day(
         let splitted_files_raw: Arc<DashMap<String, Output>> = Arc::new(DashMap::new());
         let splitted_files_parsed: Arc<DashMap<String, Output>> = Arc::new(DashMap::new());
 
-        for path in paths {
-            let file_name = path.as_path().file_name().unwrap();
+        for input_file in paths {
+            let file_name = input_file.as_path().file_name().unwrap();
             let v: Vec<&str> = file_name.to_str().unwrap().split('.').collect();
             assert_eq!(exchange, v[0]);
             if market_type != MarketType::Unknown {
@@ -669,39 +669,37 @@ fn process_files_of_day(
             let msg_type_str = v[2];
             assert_eq!(msg_type, MessageType::from_str(msg_type_str).unwrap());
 
-            let output_dir_raw = Path::new(output_dir_raw).join(msg_type_str).join(exchange);
-            std::fs::create_dir_all(output_dir_raw.as_path()).unwrap();
-
-            let output_dir_parsed = Path::new(output_dir_parsed)
-                .join(msg_type_str)
-                .join(exchange);
-            std::fs::create_dir_all(output_dir_parsed.as_path()).unwrap();
-
-            let path_clone = path.clone();
+            let input_file_clone = input_file.clone();
             let day_clone = day.to_string();
+            let exchange_output_dir_raw =
+                Path::new(output_dir_raw).join(msg_type_str).join(exchange);
             let splitted_files_raw_clone = splitted_files_raw.clone();
             let written_to_raw_clone = written_to_raw.clone();
             let tx_raw_clone = tx_raw.clone();
             thread_pool.execute(move || {
                 let t = split_file_raw(
-                    path_clone,
+                    input_file_clone,
                     day_clone,
-                    output_dir_raw,
+                    exchange_output_dir_raw,
                     splitted_files_raw_clone,
                     written_to_raw_clone,
                 );
                 tx_raw_clone.send(t).unwrap();
             });
 
+            let input_file_clone = input_file.clone();
             let day_clone = day.to_string();
             let splitted_files_parsed_clone = splitted_files_parsed.clone();
+            let exchange_output_dir_parsed = Path::new(output_dir_parsed)
+                .join(msg_type_str)
+                .join(exchange);
             let written_to_parsed_clone = written_to_parsed.clone();
             let tx_parsed_clone = tx_parsed.clone();
             thread_pool.execute(move || {
                 let t = split_file_parsed(
-                    path.as_path(),
+                    input_file_clone,
                     day_clone,
-                    output_dir_parsed.as_path(),
+                    exchange_output_dir_parsed,
                     splitted_files_parsed_clone,
                     written_to_parsed_clone,
                 );
