@@ -119,14 +119,18 @@ fn is_blocked_market(market_type: MarketType) -> bool {
 /// - split_files A HashMap that tracks opened files, key is `msg.symbol`, value is file of
 ///  `output_dir/exchange.market_type.msg_type.symbol.day.json.gz`. Each `exchange, msg_type, market_type`
 ///  has one `split_files` HashMap
-/// - visited A HashSet for deduplication, each `exchange, msg_type, market_type` has one `visited` Hashset
+/// - written_to_raw A HashSet for deduplication, each `exchange, msg_type, market_type` has one
+///  `written_to_raw` Hashset
+/// - written_to_parsed A HashSet for deduplication, each `exchange, msg_type, market_type` has one
+///  `written_to_parsed` Hashset
 fn split_file<P>(
     input_file: P,
     day: String,
     output_dir_raw: P,
     output_dir_parsed: P,
     split_files: Arc<DashMap<String, Output>>,
-    visited: Arc<DashSet<u64>>,
+    written_to_raw: Arc<DashSet<u64>>,
+    written_to_parsed: Arc<DashSet<u64>>,
 ) -> (i64, i64, i64, i64, i64)
 where
     P: AsRef<Path>,
@@ -155,20 +159,17 @@ where
                     assert_eq!(msg.market_type, market_type);
                 }
                 assert_eq!(msg.msg_type, msg_type);
-                let is_new = {
-                    let hashcode = {
-                        let mut hasher = DefaultHasher::new();
-                        msg.json.hash(&mut hasher);
-                        hasher.finish()
-                    };
-                    visited.insert(hashcode)
+                let hashcode = {
+                    let mut hasher = DefaultHasher::new();
+                    msg.json.hash(&mut hasher);
+                    hasher.finish()
                 };
-                if is_new {
-                    if let Some(symbol) = extract_symbol(exchange, market_type, &msg.json) {
-                        let real_market_type =
-                            get_real_market_type(exchange, msg.market_type, &symbol);
+                if let Some(symbol) = extract_symbol(exchange, market_type, &msg.json) {
+                    let real_market_type = get_real_market_type(exchange, msg.market_type, &symbol);
+
+                    if day == get_day(msg.received_at as i64) {
                         // raw
-                        if day == get_day(msg.received_at as i64) {
+                        if written_to_raw.insert(hashcode) {
                             unique_lines += 1;
                             let hour = get_hour(msg.received_at as i64);
                             let output_file_name = format!(
@@ -216,11 +217,17 @@ where
                                 )
                                 .unwrap();
                             } else {
+                                assert_eq!(real_market_type, msg.market_type);
                                 writeln!(output.0.lock().unwrap(), "{}", line).unwrap();
                             }
                         } else {
-                            expired_lines += 1;
+                            duplicated_lines += 1;
                         }
+                    } else {
+                        expired_lines += 1;
+                    }
+
+                    if written_to_parsed.insert(hashcode) {
                         // parsed
                         let write_parsed =
                             |market_type: MarketType, json: String, timestamp: i64| {
@@ -277,6 +284,7 @@ where
                                         Some(msg.received_at as i64),
                                     ) {
                                         for message in messages {
+                                            assert_eq!(real_market_type, message.market_type);
                                             if get_day(message.timestamp) == day {
                                                 write_parsed(
                                                     message.market_type,
@@ -293,6 +301,7 @@ where
                                     parse_trade(&msg.exchange, msg.market_type, &msg.json)
                                 {
                                     for message in messages {
+                                        assert_eq!(real_market_type, message.market_type);
                                         if get_day(message.timestamp) == day {
                                             write_parsed(
                                                 message.market_type,
@@ -305,12 +314,10 @@ where
                             }
                             _ => panic!("Unknown msg_type {}", msg.msg_type),
                         };
-                    } else {
-                        warn!("{}", line);
-                        error_lines += 1;
                     }
                 } else {
-                    duplicated_lines += 1;
+                    warn!("No symbol: {}", line);
+                    error_lines += 1;
                 }
             } else {
                 warn!("{}", line);
@@ -581,7 +588,8 @@ fn process_files_of_day(
         let start_timstamp = Instant::now();
         // Larger files get processed first
         paths.sort_by_cached_key(|path| Reverse(std::fs::metadata(path).unwrap().len()));
-        let visited: Arc<DashSet<u64>> = Arc::new(DashSet::new());
+        let written_to_raw: Arc<DashSet<u64>> = Arc::new(DashSet::new());
+        let written_to_parsed: Arc<DashSet<u64>> = Arc::new(DashSet::new());
         let split_files: Arc<DashMap<String, Output>> = Arc::new(DashMap::new());
         for path in paths {
             let file_name = path.as_path().file_name().unwrap();
@@ -599,7 +607,8 @@ fn process_files_of_day(
                 .join(exchange);
             std::fs::create_dir_all(output_dir_parsed.as_path()).unwrap();
 
-            let visited_clone = visited.clone();
+            let written_to_raw_clone = written_to_raw.clone();
+            let written_to_parsed_clone = written_to_parsed.clone();
             let split_files_clone = split_files.clone();
             let day_clone = day.to_string();
             let thread_tx = tx.clone();
@@ -610,7 +619,8 @@ fn process_files_of_day(
                     output_dir_raw.as_path(),
                     output_dir_parsed.as_path(),
                     split_files_clone,
-                    visited_clone,
+                    written_to_raw_clone,
+                    written_to_parsed_clone,
                 );
                 thread_tx.send(t).unwrap();
             });
