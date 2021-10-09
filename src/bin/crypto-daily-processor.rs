@@ -35,6 +35,8 @@ use serde_json::Value;
 use threadpool::ThreadPool;
 
 const MAX_PIXZ: usize = 2;
+// exchanges in exempted list will suceed even if error ratio is greater than threshold
+const EXEMPTED_EXCHANGES: &[&str] = &["bitget"];
 
 #[derive(Serialize, Deserialize)]
 pub struct Message {
@@ -748,7 +750,7 @@ fn process_files_of_day(
                 output.0.lock().unwrap().flush().unwrap();
             }
             let error_ratio = (error_lines as f64) / (total_lines as f64);
-            if error_ratio > 0.01 {
+            if error_ratio > 0.01 && !EXEMPTED_EXCHANGES.contains(&exchange) {
                 // error ratio > 1%
                 error!(
                     "Failed to split {} {} {} {}, because error ratio {}/{}={}% is higher than 1% !",
