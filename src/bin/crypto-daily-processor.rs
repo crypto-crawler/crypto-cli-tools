@@ -233,6 +233,7 @@ where
         } else {
             error!("malformed file {}", input_file.as_ref().display());
             error_lines += 1;
+            total_lines += 1;
         }
     }
     (
@@ -399,6 +400,7 @@ where
         } else {
             error!("malformed file {}", input_file.as_ref().display());
             error_lines += 1;
+            total_lines += 1;
         }
     }
     (
