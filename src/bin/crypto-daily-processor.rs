@@ -615,7 +615,7 @@ fn process_files_of_day(
             .collect();
         if paths.is_empty() {
             warn!("There are no files of pattern {}", glob_pattern);
-            return false;
+            return true;
         }
         {
             // Add addtional files of tomorrow, because there might be some messages belong to today
@@ -795,7 +795,7 @@ fn process_files_of_day(
             .collect();
         if paths_raw.is_empty() {
             warn!("There are no files of pattern {}", glob_pattern);
-            return false;
+            return true;
         }
 
         let paths_parsed = glob(format!("{}{}", output_dir_parsed, glob_pattern).as_str())
