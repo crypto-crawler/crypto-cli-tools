@@ -101,10 +101,7 @@ fn get_real_market_type(exchange: &str, market_type: MarketType, symbol: &str) -
 }
 
 fn is_blocked_market(market_type: MarketType) -> bool {
-    market_type == MarketType::QuantoFuture
-        || market_type == MarketType::QuantoSwap
-        || market_type == MarketType::Move
-        || market_type == MarketType::BVOL
+    market_type == MarketType::QuantoFuture || market_type == MarketType::QuantoSwap
 }
 
 /// Split a file by symbol and write to multiple files.
