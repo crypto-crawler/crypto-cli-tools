@@ -95,6 +95,8 @@ fn bitmex_get_market_type_from_symbol(symbol: &str) -> MarketType {
 fn get_real_market_type(exchange: &str, market_type: MarketType, symbol: &str) -> MarketType {
     if exchange == "bitmex" && market_type == MarketType::Unknown {
         bitmex_get_market_type_from_symbol(symbol)
+    } else if exchange == "deribit" && symbol.ends_with("-PERPETUAL") {
+        MarketType::InverseSwap
     } else {
         market_type
     }
@@ -205,12 +207,11 @@ where
                                 entry.value().clone()
                             };
                             let mut writer = output.0.lock().unwrap();
-                            if msg.market_type == MarketType::Unknown {
+                            if msg.market_type != real_market_type {
                                 msg.market_type = real_market_type;
                                 writeln!(writer, "{}", serde_json::to_string(&msg).unwrap())
                                     .unwrap();
                             } else {
-                                assert_eq!(real_market_type, msg.market_type);
                                 writeln!(writer, "{}", line).unwrap();
                             }
                         } else {
