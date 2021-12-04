@@ -1,6 +1,8 @@
 use chrono::prelude::*;
 use chrono::DateTime;
-use crypto_msg_parser::{parse_l2, parse_trade, MarketType, MessageType, OrderBookMsg, TradeMsg};
+use crypto_market_type::MarketType;
+use crypto_msg_parser::{parse_l2, parse_trade, OrderBookMsg, TradeMsg};
+use crypto_msg_type::MessageType;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;

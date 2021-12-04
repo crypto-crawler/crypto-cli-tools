@@ -22,7 +22,9 @@ use std::{
 
 use chrono::prelude::*;
 use chrono::{DateTime, TimeZone, Utc};
-use crypto_msg_parser::{extract_symbol, parse_l2, parse_trade, MarketType, MessageType};
+use crypto_market_type::MarketType;
+use crypto_msg_parser::{extract_symbol, parse_l2, parse_trade};
+use crypto_msg_type::MessageType;
 use dashmap::{DashMap, DashSet};
 use flate2::write::GzEncoder;
 use flate2::{read::GzDecoder, Compression};
@@ -66,35 +68,9 @@ fn get_hour(timestamp_millis: i64) -> String {
 #[derive(Clone)]
 struct Output(Arc<Mutex<Box<dyn std::io::Write + Send>>>);
 
-// Copied from crypto-markets/tests/bitmex.rs
-fn bitmex_get_market_type_from_symbol(symbol: &str) -> MarketType {
-    let date = &symbol[(symbol.len() - 2)..];
-    if date.parse::<i64>().is_ok() {
-        // future
-        if symbol.starts_with("XBT") {
-            // Settled in XBT, quoted in USD
-            MarketType::InverseFuture
-        } else if (&symbol[..(symbol.len() - 3)]).ends_with("USD") {
-            // Settled in XBT, quoted in USD
-            MarketType::QuantoFuture
-        } else {
-            // Settled in XBT, quoted in XBT
-            MarketType::LinearFuture
-        }
-    } else {
-        // swap
-        if symbol.starts_with("XBT") {
-            // Settled in XBT, quoted in USD
-            MarketType::InverseSwap
-        } else {
-            MarketType::QuantoSwap
-        }
-    }
-}
-
 fn get_real_market_type(exchange: &str, market_type: MarketType, symbol: &str) -> MarketType {
     if exchange == "bitmex" && market_type == MarketType::Unknown {
-        bitmex_get_market_type_from_symbol(symbol)
+        crypto_msg_parser::exchanges::bitmex::get_market_type_from_symbol(symbol)
     } else if exchange == "deribit" && symbol.ends_with("-PERPETUAL") {
         MarketType::InverseSwap
     } else {
