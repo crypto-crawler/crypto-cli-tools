@@ -70,7 +70,7 @@ struct Output(Arc<Mutex<Box<dyn std::io::Write + Send>>>);
 
 fn get_real_market_type(exchange: &str, market_type: MarketType, symbol: &str) -> MarketType {
     if exchange == "bitmex" && market_type == MarketType::Unknown {
-        crypto_msg_parser::exchanges::bitmex::get_market_type_from_symbol(symbol)
+        crypto_pair::get_market_type(symbol, "bitmex", None)
     } else if exchange == "deribit" && symbol.ends_with("-PERPETUAL") {
         MarketType::InverseSwap
     } else {
