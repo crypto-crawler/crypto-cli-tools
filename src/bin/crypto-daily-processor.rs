@@ -138,7 +138,7 @@ where
                     msg.json.hash(&mut hasher);
                     hasher.finish()
                 };
-                if let Some(symbol) = extract_symbol(exchange, market_type, &msg.json) {
+                if let Ok(symbol) = extract_symbol(exchange, market_type, &msg.json) {
                     let real_market_type = get_real_market_type(exchange, msg.market_type, &symbol);
 
                     if day == get_day(msg.received_at as i64) {
@@ -260,7 +260,7 @@ where
                     msg.json.hash(&mut hasher);
                     hasher.finish()
                 };
-                if let Some(symbol) = extract_symbol(exchange, market_type, &msg.json) {
+                if let Ok(symbol) = extract_symbol(exchange, market_type, &msg.json) {
                     let real_market_type = get_real_market_type(exchange, msg.market_type, &symbol);
 
                     if visited.insert(hashcode) {
@@ -339,6 +339,8 @@ where
                                                 expired_lines += 1;
                                             }
                                         }
+                                    } else {
+                                        warn!("parse_2 failed: {}", line);
                                     }
                                 }
                             }
@@ -358,6 +360,8 @@ where
                                             expired_lines += 1;
                                         }
                                     }
+                                } else {
+                                    warn!("parse_trade failed: {}", line);
                                 }
                             }
                             _ => panic!("Unknown msg_type {}", msg.msg_type),
