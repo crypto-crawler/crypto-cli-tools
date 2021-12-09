@@ -203,7 +203,7 @@ where
                     error_lines += 1;
                 }
             } else {
-                warn!("{}", line);
+                warn!("Not a valid Message: {}", line);
                 error_lines += 1;
             }
         } else {
@@ -374,7 +374,7 @@ where
                     error_lines += 1;
                 }
             } else {
-                warn!("{}", line);
+                warn!("Not a valid Message: {}", line);
                 error_lines += 1;
             }
         } else {
@@ -419,11 +419,11 @@ where
                     };
                     lines.push((timestamp, line))
                 } else {
-                    warn!("{}", line);
+                    warn!("Can NOT find received_at nor timestamp: {}", line);
                     error_lines += 1;
                 }
             } else {
-                warn!("{}", line);
+                warn!("Not a JSON object: {}", line);
                 error_lines += 1;
             }
         } else {
