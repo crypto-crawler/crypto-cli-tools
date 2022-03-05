@@ -1,6 +1,6 @@
 [package]
 name = "crypto-cli-tools"
-version = "0.6.5"
+version = "0.6.6"
 edition = "2021"
 authors = ["soulmachine <soulmachine@gmail.com>"]
 description = "A collection of CLI tools to process cryptocurrency data"
@@ -11,19 +11,19 @@ keywords = ["cryptocurrency", "blockchain", "trading"]
 
 [dependencies]
 chrono = "0.4"
-crypto-market-type = "1.0.5"
-crypto-msg-parser = "1.8.2"
-crypto-msg-type = "1.0.3"
-crypto-pair = "2.1.0"
-dashmap = "4"
+crypto-market-type = "1.0.7"
+crypto-msg-parser = "1.9.3"
+crypto-msg-type = "1.0.5"
+crypto-pair = "2.1.8"
+dashmap = "5"
 env_logger = "0.9"
 flate2 = "1"
 glob = "0.3"
 num_cpus = "1"
 log = "0.4"
-rand = "0.8.4"
+rand = "0.8"
 regex = "1"
-rlimit = "0.6.2"
+rlimit = "0.7"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 sysinfo = "0.21.1"
@@ -32,4 +32,6 @@ xz2 = "0.1"
 
 [profile.release]
 lto = true
+strip = "debuginfo"
 codegen-units = 1
+opt-level="z"
