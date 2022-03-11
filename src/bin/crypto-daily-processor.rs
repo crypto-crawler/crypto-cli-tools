@@ -327,8 +327,13 @@ where
                                         &msg.json,
                                         Some(msg.received_at as i64),
                                     ) {
-                                        for message in messages {
+                                        for mut message in messages {
                                             assert_eq!(real_market_type, message.market_type);
+                                            if message.exchange == "mxc" {
+                                                message.exchange = "mexc".to_string();
+                                            } else if message.exchange == "okex" {
+                                                message.exchange = "okx".to_string();
+                                            }
                                             if get_day(message.timestamp) == day {
                                                 write_parsed(
                                                     message.market_type,
@@ -340,7 +345,7 @@ where
                                             }
                                         }
                                     } else {
-                                        warn!("parse_2 failed: {}", line);
+                                        warn!("parse_l2 failed: {}", line);
                                     }
                                 }
                             }
@@ -348,8 +353,13 @@ where
                                 if let Ok(messages) =
                                     parse_trade(&msg.exchange, msg.market_type, &msg.json)
                                 {
-                                    for message in messages {
+                                    for mut message in messages {
                                         assert_eq!(real_market_type, message.market_type);
+                                        if message.exchange == "mxc" {
+                                            message.exchange = "mexc".to_string();
+                                        } else if message.exchange == "okex" {
+                                            message.exchange = "okx".to_string();
+                                        }
                                         if get_day(message.timestamp) == day {
                                             write_parsed(
                                                 message.market_type,
@@ -891,6 +901,10 @@ fn main() {
     }
 
     let exchange: &'static str = Box::leak(args[1].clone().into_boxed_str());
+    if exchange == "okex" || exchange == "mxc" {
+        eprintln!("exchange should NOT be okex nor mxc");
+        std::process::exit(1);
+    }
 
     let msg_type = MessageType::from_str(&args[2]);
     if msg_type.is_err() {
