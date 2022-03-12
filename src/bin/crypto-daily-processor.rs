@@ -185,8 +185,16 @@ where
                                 entry.value().clone()
                             };
                             let mut writer = output.0.lock().unwrap();
-                            if msg.market_type != real_market_type {
+                            if msg.market_type != real_market_type
+                                || msg.exchange == "mxc"
+                                || msg.exchange == "okex"
+                            {
                                 msg.market_type = real_market_type;
+                                if msg.exchange == "mxc" {
+                                    msg.exchange = "mexc".to_string();
+                                } else if msg.exchange == "okex" {
+                                    msg.exchange = "okx".to_string();
+                                }
                                 writeln!(writer, "{}", serde_json::to_string(&msg).unwrap())
                                     .unwrap();
                             } else {
