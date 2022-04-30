@@ -35,6 +35,7 @@ use rlimit::{setrlimit, Resource};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use threadpool::ThreadPool;
+use urlencoding::encode;
 
 const MAX_PIXZ: usize = 2;
 // exchanges in exempted list will suceed even if error ratio is greater than threshold
@@ -123,7 +124,6 @@ where
     let mut duplicated_lines = 0;
     let mut error_lines = 0;
     let mut expired_lines = 0;
-    let re = Regex::new(r"[():.\\/]+").unwrap();
     for line in buf_reader.lines() {
         if let Ok(line) = line {
             total_lines += 1;
@@ -152,7 +152,7 @@ where
                                     exchange,
                                     real_market_type,
                                     msg_type_str,
-                                    re.replace_all(&symbol, "_"),
+                                    encode(&symbol),
                                     hour
                                 )
                             };
@@ -253,7 +253,6 @@ where
     let mut duplicated_lines = 0;
     let mut error_lines = 0;
     let mut expired_lines = 0;
-    let re = Regex::new(r"[():.\\/]+").unwrap();
     for line in buf_reader.lines() {
         if let Ok(line) = line {
             total_lines += 1;
@@ -285,8 +284,8 @@ where
                                         exchange,
                                         market_type,
                                         msg_type_str,
-                                        re.replace_all(&pair, "_"),
-                                        re.replace_all(&symbol, "_"),
+                                        pair,
+                                        encode(&symbol),
                                         hour
                                     )
                                 };
@@ -960,13 +959,12 @@ fn main() {
 
 #[cfg(test)]
 mod test {
-    use regex::Regex;
+    use urlencoding::encode;
 
     #[test]
     fn test_clean_symbol() {
         let symbol = "a(b)c:d.e/f";
-        let re = Regex::new(r"[():.\\/]+").unwrap();
-        let cleaned = re.replace_all(symbol, "_");
-        assert_eq!("a_b_c_d_e_f", cleaned);
+        let encoded_symbol = encode(symbol);
+        assert_eq!("a%28b%29c%3Ad.e%2Ff", encoded_symbol);
     }
 }
