@@ -361,7 +361,10 @@ where
                                     parse_trade(&msg.exchange, msg.market_type, &msg.json)
                                 {
                                     for mut message in messages {
-                                        assert_eq!(real_market_type, message.market_type);
+                                        // assert_eq!(real_market_type, message.market_type);
+                                        if real_market_type != message.market_type {
+                                            panic!("{}", line);
+                                        }
                                         if message.exchange == "mxc" {
                                             message.exchange = "mexc".to_string();
                                         } else if message.exchange == "okex" {
