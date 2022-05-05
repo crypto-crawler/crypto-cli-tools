@@ -284,7 +284,7 @@ where
                                         exchange,
                                         market_type,
                                         msg_type_str,
-                                        pair,
+                                        pair.replace("/", "_"),
                                         encode(&symbol),
                                         hour
                                     )
@@ -600,13 +600,13 @@ fn process_files_of_day(
         let glob_pattern = if market_type == MarketType::Unknown {
             // MarketType::Unknown means all markets
             format!(
-                "{}/**/{}.*.{}.{}-??-??.json.gz",
-                input_dir, exchange, msg_type, day
+                "{}/*/{}/{}/*/{}.*.{}.{}-??-??.json.gz",
+                input_dir, msg_type, exchange, exchange, msg_type, day
             )
         } else {
             format!(
-                "{}/**/{}.{}.{}.{}-??-??.json.gz",
-                input_dir, exchange, market_type, msg_type, day
+                "{}/*/{}/{}/{}/{}.{}.{}.{}-??-??.json.gz",
+                input_dir, msg_type, exchange, market_type, exchange, market_type, msg_type, day
             )
         };
         let mut paths: Vec<PathBuf> = glob(&glob_pattern)
@@ -629,25 +629,29 @@ fn process_files_of_day(
                 let next_day: DateTime<Utc> = DateTime::from_utc(next_day, Utc);
                 next_day.format("%Y-%m-%d-%H").to_string()
             };
-
-            let mut paths_of_next_day: Vec<PathBuf> = glob(
-                if market_type == MarketType::Unknown {
-                    // MarketType::Unknown means all markets
-                    format!(
-                        "{}/**/{}.*.{}.{}-??.json.gz",
-                        input_dir, exchange, msg_type, next_day_first_hour
-                    )
-                } else {
-                    format!(
-                        "{}/**/{}.{}.{}.{}-??.json.gz",
-                        input_dir, exchange, market_type, msg_type, next_day_first_hour
-                    )
-                }
-                .as_str(),
-            )
-            .unwrap()
-            .filter_map(Result::ok)
-            .collect();
+            let glob_pattern = if market_type == MarketType::Unknown {
+                // MarketType::Unknown means all markets
+                format!(
+                    "{}/*/{}/{}/*/{}.*.{}.{}-??.json.gz",
+                    input_dir, msg_type, exchange, exchange, msg_type, next_day_first_hour
+                )
+            } else {
+                format!(
+                    "{}/*/{}/{}/{}/{}.{}.{}.{}-??.json.gz",
+                    input_dir,
+                    msg_type,
+                    exchange,
+                    market_type,
+                    exchange,
+                    market_type,
+                    msg_type,
+                    next_day_first_hour
+                )
+            };
+            let mut paths_of_next_day: Vec<PathBuf> = glob(&glob_pattern)
+                .unwrap()
+                .filter_map(Result::ok)
+                .collect();
             paths.append(&mut paths_of_next_day);
         }
 
@@ -781,11 +785,14 @@ fn process_files_of_day(
     {
         let glob_pattern = if market_type == MarketType::Unknown {
             // MarketType::Unknown means all markets
-            format!("/**/{}.*.{}.*.{}-??.json.gz", exchange, msg_type, day)
+            format!(
+                "/{}/{}/{}/{}.*.{}.*.{}-??.json.gz",
+                msg_type, exchange, market_type, exchange, msg_type, day
+            )
         } else {
             format!(
-                "/**/{}.{}.{}.*.{}-??.json.gz",
-                exchange, market_type, msg_type, day
+                "/{}/{}/{}/{}.{}.{}.*.{}-??.json.gz",
+                msg_type, exchange, market_type, exchange, market_type, msg_type, day
             )
         };
 
