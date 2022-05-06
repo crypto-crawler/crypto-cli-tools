@@ -277,8 +277,10 @@ where
                             |market_type: MarketType, json: String, timestamp: i64| {
                                 let output_file_name = {
                                     let hour = get_hour(timestamp);
-                                    let pair =
-                                        crypto_pair::normalize_pair(&symbol, exchange).unwrap();
+                                    let pair = crypto_pair::normalize_pair(&symbol, exchange)
+                                        .expect(
+                                            format!("{} {} {}", symbol, exchange, line).as_str(),
+                                        );
                                     format!(
                                         "{}.{}.{}.{}.{}.{}.json.gz",
                                         exchange,
@@ -361,9 +363,16 @@ where
                                     parse_trade(&msg.exchange, msg.market_type, &msg.json)
                                 {
                                     for mut message in messages {
-                                        // assert_eq!(real_market_type, message.market_type);
-                                        if real_market_type != message.market_type {
-                                            panic!("{}", line);
+                                        if !(real_market_type == MarketType::InverseSwap
+                                            && message.market_type == MarketType::InverseFuture
+                                            && message.exchange == "deribit")
+                                        {
+                                            // For deribit, inverse_swap is included in inverse_future
+                                            assert_eq!(
+                                                real_market_type, message.market_type,
+                                                "{}, {}",
+                                                real_market_type, line,
+                                            );
                                         }
                                         if message.exchange == "mxc" {
                                             message.exchange = "mexc".to_string();
@@ -902,7 +911,8 @@ fn process_files_of_day(
                 error_lines, total_lines,
                 start_timstamp.elapsed().as_secs()
             );
-            false
+            // if error ratio is less than 0.00001, the function is considered successful
+            (error_lines as f64) / (total_lines as f64) < 0.00001
         }
     }
 }
