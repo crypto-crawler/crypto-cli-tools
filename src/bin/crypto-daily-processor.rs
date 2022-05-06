@@ -96,7 +96,7 @@ fn is_blocked_market(market_type: MarketType) -> bool {
 /// - day `yyyy-MM-dd` string, all messages beyond [day-5min, day+5min] will be dropped
 /// - output_dir Where raw messages will be written to
 /// - splitted_files A HashMap that tracks opened files, key is `msg.symbol`, value is file of
-///  `output_dir/exchange.market_type.msg_type.symbol.day.json.gz`. Each `exchange, msg_type, market_type`
+///  `output_dir/exchange.market_type.msg_type.symbol.hour.json.gz`. Each `exchange, msg_type, market_type`
 ///  has one `splitted_files` HashMap
 /// - visited A HashSet for deduplication, each `exchange, msg_type, market_type` has one
 ///  `visited` Hashset
@@ -795,8 +795,16 @@ fn process_files_of_day(
         let glob_pattern = if market_type == MarketType::Unknown {
             // MarketType::Unknown means all markets
             format!(
-                "/{}/{}/{}/{}.*.{}.*.{}-??.json.gz",
-                msg_type, exchange, market_type, exchange, msg_type, day
+                "/{}/{}/*/{}.*.{}.*.{}-??.json.gz",
+                msg_type, exchange, exchange, msg_type, day
+            )
+        } else if exchange == "deribit"
+            && market_type == MarketType::InverseFuture
+            && msg_type == MessageType::Trade
+        {
+            format!(
+                "/{}/{}/{{invere_future,inverse_swap}}/{}.*.{}.*.{}-??.json.gz",
+                msg_type, exchange, exchange, msg_type, day
             )
         } else {
             format!(
