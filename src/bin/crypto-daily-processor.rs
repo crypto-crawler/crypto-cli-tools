@@ -987,12 +987,12 @@ fn main() {
 
 #[cfg(test)]
 mod test {
-    use urlencoding::encode;
+    use urlencoding::encode; // equivalent to urllib.parse.quote_plus() in Python
 
     #[test]
     fn test_clean_symbol() {
-        let symbol = "a(b)c:d.e/f";
+        let symbol = "a(b)c:d.-_e/f";
         let encoded_symbol = encode(symbol);
-        assert_eq!("a%28b%29c%3Ad.e%2Ff", encoded_symbol);
+        assert_eq!("a%28b%29c%3Ad.-_e%2Ff", encoded_symbol);
     }
 }
