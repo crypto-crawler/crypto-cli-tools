@@ -152,7 +152,7 @@ where
                                     exchange,
                                     real_market_type,
                                     msg_type_str,
-                                    encode(&symbol),
+                                    encode_symbol(&symbol),
                                     hour
                                 )
                             };
@@ -281,13 +281,18 @@ where
                                         .expect(
                                             format!("{} {} {}", symbol, exchange, line).as_str(),
                                         );
+                                    let (base, quote) = {
+                                        let v = pair.as_str().split('/').collect::<Vec<&str>>();
+                                        (v[0], v[1])
+                                    };
                                     format!(
-                                        "{}.{}.{}.{}.{}.{}.json.gz",
+                                        "{}.{}.{}.{}.{}.{}.{}.json.gz",
                                         exchange,
                                         market_type,
                                         msg_type_str,
-                                        pair.replace("/", "_"),
-                                        encode(&symbol),
+                                        encode_symbol(base),
+                                        encode_symbol(quote),
+                                        encode_symbol(&symbol),
                                         hour
                                     )
                                 };
@@ -985,14 +990,17 @@ fn main() {
     }
 }
 
+fn encode_symbol(symbol: &str) -> String {
+    let new_symbol = encode(symbol).to_string(); // equivalent to urllib.parse.quote_plus()
+    new_symbol.replace(".", "%2E") // escape the dot '.'
+}
+
 #[cfg(test)]
 mod test {
-    use urlencoding::encode; // equivalent to urllib.parse.quote_plus() in Python
-
     #[test]
     fn test_clean_symbol() {
         let symbol = "a(b)c:d.-_e/f";
-        let encoded_symbol = encode(symbol);
-        assert_eq!("a%28b%29c%3Ad.-_e%2Ff", encoded_symbol);
+        let encoded_symbol = super::encode_symbol(symbol);
+        assert_eq!("a%28b%29c%3Ad%2E-_e%2Ff", encoded_symbol);
     }
 }
