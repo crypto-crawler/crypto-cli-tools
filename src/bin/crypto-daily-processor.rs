@@ -627,10 +627,6 @@ fn process_files_of_day(
             .unwrap()
             .filter_map(Result::ok)
             .collect();
-        if paths.is_empty() {
-            warn!("There are no files of pattern {}", glob_pattern);
-            return true;
-        }
         {
             // Add addtional files of tomorrow, because there might be some messages belong to today
             let next_day_first_hour = {
@@ -667,6 +663,15 @@ fn process_files_of_day(
                 .filter_map(Result::ok)
                 .collect();
             paths.append(&mut paths_of_next_day);
+        }
+        if paths
+            .iter()
+            .filter(|s| !s.ends_with("-00-00.json.gz"))
+            .count()
+            == 0
+        {
+            warn!("There are no files of pattern {}", glob_pattern);
+            return true;
         }
 
         info!(
