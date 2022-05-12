@@ -664,16 +664,16 @@ fn process_files_of_day(
                 .collect();
             paths.append(&mut paths_of_next_day);
         }
+        let zero_hour = Regex::new(r"\d{4}-\d{2}-\d{2}-00-\d{2}\.json\.gz$").unwrap();
         if paths
             .iter()
-            .filter(|s| !s.ends_with("-00-00.json.gz"))
+            .filter(|s| !zero_hour.is_match(s.file_name().unwrap().to_str().unwrap()))
             .count()
             == 0
         {
-            warn!("There are no files of pattern {}", glob_pattern);
+            warn!("There are no files to split, pattern: {}", glob_pattern);
             return true;
         }
-
         info!(
             "Started split {} {} {} {}",
             exchange, market_type, msg_type, day
@@ -828,7 +828,7 @@ fn process_files_of_day(
             .filter_map(Result::ok)
             .collect();
         if paths_raw.is_empty() {
-            warn!("There are no files of pattern {}", glob_pattern);
+            warn!("There are no files to sort, pattern: {}", glob_pattern);
             return true;
         }
 
