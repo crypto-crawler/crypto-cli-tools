@@ -560,7 +560,7 @@ where
                 output_dir.join(&filename[..filename.len() - 3])
             };
             match std::process::Command::new("xz")
-                .args(["-6", "-f", "-T0", json_file.as_path().to_str().unwrap()])
+                .args(["-9", "-f", "-T0", json_file.as_path().to_str().unwrap()])
                 .output()
             {
                 Ok(output) => {
