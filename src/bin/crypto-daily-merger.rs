@@ -333,13 +333,6 @@ fn sort_files<P>(
 where
     P: AsRef<Path>,
 {
-    for input_file in hourly_files.iter() {
-        let input_path = input_file.as_ref();
-        assert!(input_path.to_str().unwrap().ends_with(".csv.gz"));
-        if !input_path.exists() {
-            panic!("{:?} does not exist", input_path.display());
-        }
-    }
     let output_file = output_file.as_ref();
     assert!(output_file.to_str().unwrap().ends_with(".csv.xz"));
 
@@ -402,8 +395,11 @@ where
                 let filename = output_file.file_name().unwrap().to_str().unwrap();
                 output_dir.join(&filename[..filename.len() - 3])
             };
+
+            // level 9 only uses 5 cores maximum, and level 8 only 9, while level 7 can utilize all cores
+            // see https://github.com/phoronix-test-suite/test-profiles/issues/76
             match std::process::Command::new("xz")
-                .args(["-9", "-f", "-T0", json_file.as_path().to_str().unwrap()])
+                .args(["-7", "-f", "-T0", json_file.as_path().to_str().unwrap()])
                 .output()
             {
                 Ok(output) => {
