@@ -38,7 +38,7 @@ use serde_json::Value;
 use threadpool::ThreadPool;
 use urlencoding::encode;
 
-const MAX_PIXZ: usize = 2;
+const MAX_XZ: usize = 2;
 // exchanges in exempted list will suceed even if error ratio is greater than threshold
 const EXEMPTED_EXCHANGES: &[&str] = &["bitget"];
 
@@ -671,7 +671,7 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
         );
         let (tx, rx): (Sender<(i64, i64)>, Receiver<(i64, i64)>) = mpsc::channel();
         let start_timstamp = Instant::now();
-        let semaphore = Arc::new(AtomicUsize::new(MAX_PIXZ));
+        let semaphore = Arc::new(AtomicUsize::new(MAX_XZ));
 
         for input_files in paths_by_day {
             let file_name = input_files[0]
