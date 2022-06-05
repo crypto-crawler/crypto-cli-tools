@@ -297,22 +297,23 @@ where
             error_lines += 1;
         }
     }
-    std::fs::remove_file(input_file.as_ref()).unwrap();
-    if error_lines == 0 {
-        // sort by timestamp first, then received_at
-        lines.sort_by(|a, b| {
-            if a.1 == b.1 {
-                a.0.cmp(&b.0)
-            } else {
-                a.1.cmp(&b.1)
-            }
-        });
 
-        for line in lines {
-            writeln!(writer, "{}", line.2).unwrap();
+    // sort by timestamp first, then received_at
+    lines.sort_by(|a, b| {
+        if a.1 == b.1 {
+            a.0.cmp(&b.0)
+        } else {
+            a.1.cmp(&b.1)
         }
-        writer.flush().unwrap();
-    } else {
+    });
+
+    for line in lines {
+        writeln!(writer, "{}", line.2).unwrap();
+    }
+    writer.flush().unwrap();
+    std::fs::remove_file(input_file.as_ref()).unwrap();
+
+    if error_lines > 0 {
         error!(
             "Found {} malformed lines out of total {} lines in file {}",
             error_lines,
@@ -670,17 +671,19 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
         let semaphore = Arc::new(AtomicUsize::new(MAX_XZ));
 
         for input_files in paths_by_day {
-            let file_name = input_files[0]
-                .as_path()
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap();
-            let output_file_name = format!(
-                "{}.csv.xz",
-                &file_name[0..(file_name.len() - "-??.csv.gz".len())]
-            );
-            let output_file = Path::new(input_files[0].parent().unwrap()).join(output_file_name);
+            let output_file = {
+                let file_name = input_files[0]
+                    .as_path()
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap();
+                let output_file_name = format!(
+                    "{}.csv.xz",
+                    &file_name[0..(file_name.len() - "-??.csv.gz".len())]
+                );
+                Path::new(input_files[0].parent().unwrap()).join(output_file_name)
+            };
             let tx_clone = tx.clone();
             let semaphore_clone = semaphore.clone();
 
