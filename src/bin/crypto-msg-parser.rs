@@ -12,6 +12,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::io::prelude::*;
+use std::path::Path;
 use std::str::FromStr;
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
@@ -194,6 +195,11 @@ fn main() {
     if args.len() != 3 && args.len() != 4 {
         eprintln!("Usage: crypto-msg-parser <input_file> <output_file> [yyyy-MM(-dd)]]");
         std::process::exit(1);
+    }
+
+    if !Path::new("/usr/bin/xz").exists() {
+        eprintln!("/usr/bin/xz not found, please install it!");
+        return;
     }
 
     let input_file: &'static str = Box::leak(args[1].clone().into_boxed_str());

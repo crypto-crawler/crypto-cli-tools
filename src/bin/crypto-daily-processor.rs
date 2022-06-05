@@ -278,9 +278,9 @@ where
                                 let output_file_name = {
                                     let hour = get_hour(timestamp);
                                     let pair = crypto_pair::normalize_pair(&symbol, exchange)
-                                        .expect(
-                                            format!("{} {} {}", symbol, exchange, line).as_str(),
-                                        );
+                                        .unwrap_or_else(|| {
+                                            panic!("{} {} {}", symbol, exchange, line)
+                                        });
                                     let (base, quote) = {
                                         let v = pair.as_str().split('/').collect::<Vec<&str>>();
                                         (v[0], v[1])
@@ -997,7 +997,7 @@ fn main() {
 
 fn encode_symbol(symbol: &str) -> String {
     let new_symbol = encode(symbol).to_string(); // equivalent to urllib.parse.quote_plus()
-    new_symbol.replace(".", "%2E") // escape the dot '.'
+    new_symbol.replace('.', "%2E") // escape the dot '.'
 }
 
 #[cfg(test)]
