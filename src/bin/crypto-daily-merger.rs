@@ -30,6 +30,7 @@ use flate2::write::GzEncoder;
 use flate2::{read::GzDecoder, Compression};
 use glob::glob;
 use log::*;
+use once_cell::sync::Lazy;
 use rand::Rng;
 use rlimit::{setrlimit, Resource};
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,11 @@ use urlencoding::encode;
 const MAX_PIXZ: usize = 2;
 // exchanges in exempted list will suceed even if error ratio is greater than threshold
 const EXEMPTED_EXCHANGES: &[&str] = &["bitget"];
+
+static USE_XZ: Lazy<bool> = Lazy::new(|| match std::env::var("USE_XZ") {
+    Ok(x) => x.parse::<bool>().unwrap_or(false),
+    Err(_e) => false,
+});
 
 /// Copied from crypto-crawler/src/msg.rs
 #[derive(Serialize, Deserialize)]
@@ -665,10 +671,9 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
         );
         let (tx, rx): (Sender<(i64, i64)>, Receiver<(i64, i64)>) = mpsc::channel();
         let start_timstamp = Instant::now();
-        let percentile_90 = ((paths_by_day.len() as f64) * 0.95) as usize;
         let semaphore = Arc::new(AtomicUsize::new(MAX_PIXZ));
 
-        for (index, input_files) in paths_by_day.into_iter().enumerate() {
+        for input_files in paths_by_day {
             let file_name = input_files[0]
                 .as_path()
                 .file_name()
@@ -682,17 +687,11 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
             let output_file = Path::new(input_files[0].parent().unwrap()).join(output_file_name);
             let tx_clone = tx.clone();
             let semaphore_clone = semaphore.clone();
-            if index >= percentile_90 {
-                thread_pool.execute(move || {
-                    let t = sort_files(input_files, output_file, true, semaphore_clone);
-                    tx_clone.send(t).unwrap();
-                });
-            } else {
-                thread_pool.execute(move || {
-                    let t = sort_files(input_files, output_file, false, semaphore_clone);
-                    tx_clone.send(t).unwrap();
-                });
-            }
+
+            thread_pool.execute(move || {
+                let t = sort_files(input_files, output_file, *USE_XZ, semaphore_clone);
+                tx_clone.send(t).unwrap();
+            });
         }
         thread_pool.join();
         drop(tx); // drop the sender
@@ -744,9 +743,13 @@ fn main() {
         std::process::exit(1);
     }
 
-    if !Path::new("/usr/bin/xz").exists() {
-        eprintln!("/usr/bin/xz NOT found, please install it!");
-        return;
+    if *USE_XZ {
+        if !Path::new("/usr/bin/xz").exists() {
+            eprintln!("/usr/bin/xz NOT found, please install it!");
+            return;
+        } else {
+            debug!("/usr/bin/xz found");
+        }
     }
 
     let day: &'static str = Box::leak(args[1].clone().into_boxed_str());
