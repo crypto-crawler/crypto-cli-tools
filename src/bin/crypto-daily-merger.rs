@@ -183,7 +183,7 @@ fn split_file(
             } else {
                 msg.received_at as i64
             };
-            if day != get_day(msg.received_at as i64) {
+            if day != get_day(timestamp) {
                 expired_lines += 1;
                 continue;
             }
@@ -217,7 +217,7 @@ fn split_file(
                     "okex" => "okx",
                     _ => msg.exchange.as_str(),
                 };
-                let hour = get_hour(msg.received_at as i64);
+                let hour = get_hour(timestamp);
                 format!(
                     "{}.{}.{}.{}.{}.csv.gz",
                     real_exchange,
@@ -286,7 +286,7 @@ where
             let arr = line.split('\t').collect::<Vec<&str>>();
             if arr.len() == 3 {
                 let received_at = arr[0].parse::<i64>().unwrap();
-                let timestamp = arr[0].parse::<i64>().unwrap();
+                let timestamp = arr[1].parse::<i64>().unwrap();
                 lines.push((received_at, timestamp, line));
             } else {
                 warn!("Not a valid message: {}", line);
