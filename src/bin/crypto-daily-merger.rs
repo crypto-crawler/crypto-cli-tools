@@ -265,7 +265,7 @@ fn split_file(
     )
 }
 
-fn sort_file<P>(input_file: P, writer: &mut dyn std::io::Write) -> (i64, i64)
+fn sort_file<P>(input_file: P, writer: &mut dyn std::io::Write) -> bool
 where
     P: AsRef<Path>,
 {
@@ -277,25 +277,34 @@ where
         let f_in = std::fs::File::open(&input_file).unwrap();
         std::io::BufReader::new(GzDecoder::new(f_in))
     };
-    let mut total_lines = 0;
-    let mut error_lines = 0;
+
+    let mut success = true;
     let mut lines: Vec<(i64, i64, String)> = Vec::new();
     for line in buf_reader.lines() {
         if let Ok(line) = line {
-            total_lines += 1;
             let arr = line.split('\t').collect::<Vec<&str>>();
             if arr.len() == 3 {
                 let received_at = arr[0].parse::<i64>().unwrap();
                 let timestamp = arr[1].parse::<i64>().unwrap();
                 lines.push((received_at, timestamp, line));
             } else {
-                warn!("Not a valid message: {}", line);
-                error_lines += 1;
+                error!(
+                    "Malformed line {} in {:?}",
+                    line,
+                    input_file.as_ref().display()
+                );
+                success = false;
+                break;
             }
         } else {
-            error!("malformed file {}", input_file.as_ref().display());
-            error_lines += 1;
+            error!("Corrupted file {}", input_file.as_ref().display());
+            success = false;
+            break;
         }
+    }
+
+    if !success {
+        return false;
     }
 
     // sort by timestamp first, then received_at
@@ -313,15 +322,7 @@ where
     writer.flush().unwrap();
     std::fs::remove_file(input_file.as_ref()).unwrap();
 
-    if error_lines > 0 {
-        error!(
-            "Found {} malformed lines out of total {} lines in file {}",
-            error_lines,
-            total_lines,
-            input_file.as_ref().display()
-        );
-    }
-    (error_lines, total_lines)
+    true
 }
 
 // Use xz if use_xz is true, and semaphore allows only two xz processes
@@ -330,7 +331,7 @@ fn sort_files<P>(
     output_file: P,
     use_xz: bool,
     semaphore: Arc<AtomicUsize>,
-) -> (i64, i64)
+) -> bool
 where
     P: AsRef<Path>,
 {
@@ -356,51 +357,52 @@ where
         let e = xz2::write::XzEncoder::new(f_out, 6);
         Box::new(std::io::BufWriter::new(e))
     } else {
-        let json_file = {
+        let tmp_file = {
             let output_dir = output_file.parent().unwrap().to_path_buf();
             let filename = output_file.file_name().unwrap().to_str().unwrap();
-            output_dir.join(&filename[..filename.len() - 3])
+            output_dir.join(&filename[..filename.len() - ".xz".len()])
         };
         let f_out = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open(json_file.as_path())
+            .open(tmp_file.as_path())
             .unwrap();
         Box::new(std::io::BufWriter::new(f_out))
     };
 
-    let mut total_lines = 0;
-    let mut error_lines = 0;
+    let mut all_success = true;
     for input_file in hourly_files {
-        let (e, t) = sort_file(input_file, writer.as_mut());
-        total_lines += t;
-        error_lines += e;
+        let success = sort_file(input_file, writer.as_mut());
+        if !success {
+            all_success = false;
+            break;
+        }
     }
     drop(writer);
 
-    if error_lines == 0 {
+    if all_success {
         if use_xz {
             {
                 // Wait for the semaphore which allows only two xz processes
                 let mut rng = rand::thread_rng();
                 while semaphore.load(Ordering::SeqCst) == 0 {
-                    let millis = rng.gen_range(3000_u64..10000_u64);
+                    let millis = rng.gen_range(4000_u64..16000_u64);
                     debug!("Waiting for semaphore");
                     std::thread::sleep(Duration::from_millis(millis));
                 }
                 semaphore.fetch_sub(1_usize, Ordering::SeqCst);
             }
-            let json_file = {
+            let tmp_file = {
                 let output_dir = output_file.parent().unwrap().to_path_buf();
                 let filename = output_file.file_name().unwrap().to_str().unwrap();
-                output_dir.join(&filename[..filename.len() - 3])
+                output_dir.join(&filename[..filename.len() - ".xz".len()])
             };
 
             // level 9 only uses 5 cores maximum, and level 8 only 9, while level 7 can utilize all cores
             // see https://github.com/phoronix-test-suite/test-profiles/issues/76
             match std::process::Command::new("xz")
-                .args(["-7", "-f", "-T0", json_file.as_path().to_str().unwrap()])
+                .args(["-7", "-f", "-T0", tmp_file.as_path().to_str().unwrap()])
                 .output()
             {
                 Ok(output) => {
@@ -413,25 +415,20 @@ where
             semaphore.fetch_add(1_usize, Ordering::SeqCst);
         }
     } else {
-        error!(
-            "Found {} malformed lines out of total {} total lines for {}",
-            error_lines,
-            total_lines,
-            output_file.display()
-        );
         // cleanup
         if use_xz {
-            let json_file = {
+            let tmp_file = {
                 let output_dir = output_file.parent().unwrap().to_path_buf();
                 let filename = output_file.file_name().unwrap().to_str().unwrap();
-                output_dir.join(&filename[..filename.len() - 3])
+                output_dir.join(&filename[..filename.len() - ".xz".len()])
             };
-            std::fs::remove_file(json_file.as_path()).unwrap();
+            std::fs::remove_file(tmp_file.as_path()).unwrap();
         } else {
             std::fs::remove_file(output_file).unwrap();
         }
     }
-    (error_lines, total_lines)
+
+    all_success
 }
 
 /// Search files of the given date in the given directory.
@@ -510,7 +507,7 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
             )
         };
         info!(
-            "Started split {} {} {} {}",
+            "Started to split {} {} {} {}",
             exchange, market_type, msg_type, day
         );
 
@@ -569,10 +566,6 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
                 error_lines += t.3;
                 expired_lines += t.4;
             }
-            info!(
-                "total_lines {} unique_lines {} duplicated_lines {} error_lines {} expired_lines {}",
-                total_lines, unique_lines , duplicated_lines , error_lines , expired_lines
-            );
             assert_eq!(
                 total_lines,
                 unique_lines + duplicated_lines + error_lines + expired_lines
@@ -585,19 +578,10 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
             let error_ratio = (error_lines as f64) / (total_lines as f64);
             if error_ratio > 0.01 && !EXEMPTED_EXCHANGES.contains(&(exchange.as_str())) {
                 // error ratio > 1%
-                error!(
-                    "Failed to split {} {} {} {}, because error ratio {}/{}={}% is higher than 1% !",
-                    exchange,
-                    market_type,
-                    msg_type,
-                    day,
-                    error_lines,
-                    total_lines,
-                    error_ratio * 100.0
-                );
+                error!("Failed to split {} {} {} {}, error ratio {}%, total_lines {} unique_lines {} duplicated_lines {} error_lines {} expired_lines {}, time elapsed {} seconds", exchange, market_type, msg_type, day, error_ratio * 100.0, total_lines, unique_lines , duplicated_lines , error_lines , expired_lines, start_timstamp.elapsed().as_secs());
                 false
             } else {
-                info!("Finished split {} {} {} {}, total {} lines, {} unique lines, {} duplicated lines, {} expired lines,  {} malformed lines, time elapsed {} seconds", exchange, market_type, msg_type, day, total_lines, unique_lines, duplicated_lines, expired_lines, error_lines, start_timstamp.elapsed().as_secs());
+                info!("Succeeded to split {} {} {} {}, error ratio {}%, total_lines {} unique_lines {} duplicated_lines {} error_lines {} expired_lines {}, time elapsed {} seconds", exchange, market_type, msg_type, day, error_ratio * 100.0, total_lines, unique_lines , duplicated_lines , error_lines , expired_lines, start_timstamp.elapsed().as_secs());
                 true
             }
         };
@@ -663,10 +647,10 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
         };
 
         info!(
-            "Started sort {} {} {} {}",
+            "Started to sort and merge hourly files of {} {} {} {}",
             exchange, market_type, msg_type, day
         );
-        let (tx, rx): (Sender<(i64, i64)>, Receiver<(i64, i64)>) = mpsc::channel();
+        let (tx, rx): (Sender<bool>, Receiver<bool>) = mpsc::channel();
         let start_timstamp = Instant::now();
         let semaphore = Arc::new(AtomicUsize::new(MAX_XZ));
 
@@ -688,43 +672,43 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
             let semaphore_clone = semaphore.clone();
 
             thread_pool.execute(move || {
-                let t = sort_files(input_files, output_file, *USE_XZ, semaphore_clone);
-                tx_clone.send(t).unwrap();
+                let success = sort_files(input_files, output_file, *USE_XZ, semaphore_clone);
+                tx_clone.send(success).unwrap();
             });
         }
         thread_pool.join();
         drop(tx); // drop the sender
-        let mut total_lines = 0;
-        let mut error_lines = 0;
-        for t in rx {
-            error_lines += t.0;
-            total_lines += t.1;
+
+        let mut all_success = true;
+        for success in rx {
+            if !success {
+                all_success = false;
+                break;
+            }
         }
-        if error_lines == 0 {
+        if all_success {
             info!(
-                "Finished sort {} {} {} {}, {} files, total {} lines, time elapsed {} seconds",
+                "Succeeded to sort and merge {} files of {} {} {} {}, time elapsed {} seconds",
+                total_files,
                 exchange,
                 market_type,
                 msg_type,
                 day,
-                total_files,
-                total_lines,
                 start_timstamp.elapsed().as_secs()
             );
-            true
         } else {
             error!(
-                "Failed to sort {} {} {} {}, found {} malformed lines out of total {} lines, time elapsed {} seconds",
+                "Failed to sort and merge {} files of {} {} {} {}, time elapsed {} seconds",
+                total_files,
                 exchange,
                 market_type,
                 msg_type,
                 day,
-                error_lines, total_lines,
                 start_timstamp.elapsed().as_secs()
             );
-            // if error ratio is less than 0.00001, the function is considered successful
-            (error_lines as f64) / (total_lines as f64) < 0.00001
         }
+
+        all_success
     }
 }
 
