@@ -39,8 +39,6 @@ use threadpool::ThreadPool;
 use urlencoding::encode;
 
 const MAX_XZ: usize = 2;
-// exchanges in exempted list will suceed even if error ratio is greater than threshold
-const EXEMPTED_EXCHANGES: &[&str] = &["bitget"];
 
 static USE_XZ: Lazy<bool> = Lazy::new(|| match std::env::var("USE_XZ") {
     Ok(x) => x.parse::<bool>().unwrap_or(false),
@@ -93,6 +91,20 @@ fn validate_line(line: &str) -> bool {
     if let Ok(msg) = serde_json::from_str::<Message>(line) {
         serde_json::from_str::<HashMap<String, Value>>(msg.json.as_str()).is_ok()
             || serde_json::from_str::<Vec<Value>>(msg.json.as_str()).is_ok()
+    } else {
+        false
+    }
+}
+
+// exchanges in exempted list will suceed even if error ratio is greater than threshold
+fn is_exempted(exchange: &str, market_type: MarketType, msg_type: MessageType) -> bool {
+    if exchange == "bitget" {
+        true
+    } else if exchange == "binance"
+        && market_type == MarketType::EuropeanOption
+        && msg_type == MessageType::Trade
+    {
+        true
     } else {
         false
     }
@@ -576,7 +588,7 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
                 output.0.lock().unwrap().flush().unwrap();
             }
             let error_ratio = (error_lines as f64) / (total_lines as f64);
-            if error_ratio > 0.01 && !EXEMPTED_EXCHANGES.contains(&(exchange.as_str())) {
+            if error_ratio > 0.01 && !is_exempted(exchange.as_str(), market_type, msg_type) {
                 // error ratio > 1%
                 error!("Failed to split {} {} {} {}, error ratio {}%, total_lines {} unique_lines {} duplicated_lines {} error_lines {} expired_lines {}, time elapsed {} seconds", exchange, market_type, msg_type, day, error_ratio * 100.0, total_lines, unique_lines , duplicated_lines , error_lines , expired_lines, start_timstamp.elapsed().as_secs());
                 false
