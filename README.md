@@ -18,7 +18,7 @@ Usage: `crypto-msg-parser <input_file> <output_file> [yyyy-MM]`.
 
 If month is specified, only messages of the month will be kept.
 
-## crypto-daily-processor
+## crypto-daily-processor(DEPRECATED)
 
 Usage: `crypto-daily-processor <exchange> <msg_type> <market_type> <day> <input_dir> <output_dir_raw> <output_dir_parsed>`
 
@@ -27,3 +27,5 @@ For example:
 ```bash
 crypto-daily-processor bitstamp trade spot 2021-09-02 /mnt/dpool/download /mnt/dpool/daily-raw /mnt/dpool/daily-parsed
 ```
+
+This CLI tool is replaced by `crypto-daily-merger` + `crypto-msg-parser`.
