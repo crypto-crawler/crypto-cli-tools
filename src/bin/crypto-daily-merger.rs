@@ -411,7 +411,7 @@ where
                 output_dir.join(&filename[..filename.len() - ".xz".len()])
             };
 
-            // level 9 only uses 5 cores maximum, and level 8 only 9, while level 7 can utilize all cores
+            // level 9 only uses 5 cores maximum, and level 8 only uses 9 cores, while level 7 can utilize all cores
             // see https://github.com/phoronix-test-suite/test-profiles/issues/76
             match std::process::Command::new("xz")
                 .args(["-7", "-f", "-T0", tmp_file.as_path().to_str().unwrap()])
