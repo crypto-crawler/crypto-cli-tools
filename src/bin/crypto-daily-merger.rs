@@ -331,7 +331,7 @@ where
 }
 
 // Use xz if use_xz is true, and semaphore allows only two xz processes
-fn sort_files<P>(
+fn sort_and_merge_files<P>(
     mut hourly_files: Vec<P>,
     output_file: P,
     use_xz: bool,
@@ -629,8 +629,8 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
         }
         let total_files = paths.len();
 
-        let paths_by_day = {
-            // group by day
+        let groups = {
+            // files with the same symbol are in one group
             let mut groups: HashMap<String, Vec<PathBuf>> = HashMap::new();
             for path in paths {
                 let file_name = path.as_path().file_name().unwrap().to_str().unwrap();
@@ -659,9 +659,9 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
         let start_timstamp = Instant::now();
         let semaphore = Arc::new(AtomicUsize::new(MAX_XZ));
 
-        for input_files in paths_by_day {
+        for files_of_same_symbol in groups {
             let output_file = {
-                let file_name = input_files[0]
+                let file_name = files_of_same_symbol[0]
                     .as_path()
                     .file_name()
                     .unwrap()
@@ -671,13 +671,18 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
                     "{}.csv.xz",
                     &file_name[0..(file_name.len() - "-??.csv.gz".len())]
                 );
-                Path::new(input_files[0].parent().unwrap()).join(output_file_name)
+                Path::new(files_of_same_symbol[0].parent().unwrap()).join(output_file_name)
             };
             let tx_clone = tx.clone();
             let semaphore_clone = semaphore.clone();
 
             thread_pool.execute(move || {
-                let success = sort_files(input_files, output_file, *USE_XZ, semaphore_clone);
+                let success = sort_and_merge_files(
+                    files_of_same_symbol,
+                    output_file,
+                    *USE_XZ,
+                    semaphore_clone,
+                );
                 tx_clone.send(success).unwrap();
             });
         }
