@@ -4,7 +4,6 @@ use std::io::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use std::{
-    cmp::Reverse,
     collections::hash_map::DefaultHasher,
     collections::HashMap,
     env,
@@ -98,16 +97,10 @@ fn validate_line(line: &str) -> bool {
 
 // exchanges in exempted list will suceed even if error ratio is greater than threshold
 fn is_exempted(exchange: &str, market_type: MarketType, msg_type: MessageType) -> bool {
-    if exchange == "bitget" {
-        true
-    } else if exchange == "binance"
-        && market_type == MarketType::EuropeanOption
-        && msg_type == MessageType::Trade
-    {
-        true
-    } else {
-        false
-    }
+    exchange == "bitget"
+        || (exchange == "binance"
+            && market_type == MarketType::EuropeanOption
+            && msg_type == MessageType::Trade)
 }
 
 /// Split a file by symbol and write to multiple files.
@@ -488,8 +481,8 @@ fn search_files_multi(day: &str, input_dirs: &[&str]) -> Vec<PathBuf> {
     {
         Vec::new()
     } else {
-        // Larger files get processed first
-        paths.sort_by_cached_key(|path| Reverse(std::fs::metadata(path).unwrap().len()));
+        // Sort by file name, so that earlier files get processed first
+        paths.sort();
         paths
     }
 }
