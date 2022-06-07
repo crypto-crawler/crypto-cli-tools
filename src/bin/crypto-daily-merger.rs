@@ -147,14 +147,19 @@ fn split_file(
 
     for line in buf_reader.lines() {
         if let Ok(line) = line {
+            let line = line.as_str().trim();
+            if line.is_empty() {
+                // ignore empty lines
+                continue;
+            }
             total_lines += 1;
-            if !validate_line(&line) {
+            if !validate_line(line) {
                 warn!("Not a valid Message: {}", line);
                 error_lines += 1;
                 continue;
             }
 
-            let msg = serde_json::from_str::<Message>(&line).unwrap();
+            let msg = serde_json::from_str::<Message>(line).unwrap();
             {
                 // optional validation
                 assert_eq!(msg.exchange, exchange);
