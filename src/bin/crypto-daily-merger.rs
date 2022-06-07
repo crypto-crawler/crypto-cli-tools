@@ -258,7 +258,14 @@ fn split_file(
                 entry.value().clone()
             };
             let mut writer = output.0.lock().unwrap();
-            writeln!(writer, "{}\t{}\t{}", msg.received_at, timestamp, msg.json).unwrap();
+            writeln!(
+                writer,
+                "{}\t{}\t{}",
+                msg.received_at,
+                timestamp,
+                msg.json.trim()
+            )
+            .unwrap();
             unique_lines += 1;
         } else {
             error!("malformed file {}", input_file.display());
