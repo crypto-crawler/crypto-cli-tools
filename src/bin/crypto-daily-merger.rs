@@ -37,7 +37,7 @@ use serde_json::Value;
 use threadpool::ThreadPool;
 use urlencoding::encode;
 
-const MAX_XZ: usize = 2;
+const MAX_XZ: usize = 4;
 
 static USE_XZ: Lazy<bool> = Lazy::new(|| match std::env::var("USE_XZ") {
     Ok(x) => x.parse::<bool>().unwrap_or(false),
