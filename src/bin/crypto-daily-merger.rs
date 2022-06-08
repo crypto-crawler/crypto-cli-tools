@@ -637,7 +637,10 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
         }
 
         for path in paths.iter() {
-            assert!(!path.as_path().to_str().unwrap().contains(".unknown."));
+            let path_str = path.as_path().to_str().unwrap();
+            if !(exchange == "deribit" && msg_type == MessageType::OpenInterest) {
+                assert!(!path_str.contains(".unknown."), "{}", path_str);
+            }
         }
         let total_files = paths.len();
 
