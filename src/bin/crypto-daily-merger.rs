@@ -593,7 +593,10 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
                 output.0.lock().unwrap().flush().unwrap();
             }
             let error_ratio = (error_lines as f64) / (total_lines as f64);
-            if error_ratio > 0.01 && !is_exempted(exchange.as_str(), market_type, msg_type) {
+            if total_lines > 1000
+                && error_ratio > 0.01
+                && !is_exempted(exchange.as_str(), market_type, msg_type)
+            {
                 // error ratio > 1%
                 error!("Failed to split {} {} {} {}, error ratio {}%, total_lines {} unique_lines {} duplicated_lines {} error_lines {} expired_lines {}, time elapsed {} seconds", exchange, market_type, msg_type, day, error_ratio * 100.0, total_lines, unique_lines , duplicated_lines , error_lines , expired_lines, start_timstamp.elapsed().as_secs());
                 false
