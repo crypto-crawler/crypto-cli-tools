@@ -42,24 +42,24 @@ fn parse_lines(
                 let messages =
                     parse_trade(exchange, market_type, raw).unwrap_or_else(|_| panic!("{}", line));
                 for message in messages {
-                    let json_str = serde_json::to_string(&message).unwrap();
-                    write(message.timestamp, json_str);
+                    let csv_str = message.to_csv_string();
+                    write(message.timestamp, csv_str);
                 }
             }
             MessageType::L2Event => {
                 let messages = parse_l2(exchange, market_type, raw, Some(timestamp))
                     .unwrap_or_else(|_| panic!("{}", line));
                 for message in messages {
-                    let json_str = serde_json::to_string(&message).unwrap();
-                    write(message.timestamp, json_str);
+                    let csv_str = message.to_csv_string();
+                    write(message.timestamp, csv_str);
                 }
             }
             MessageType::L2TopK => {
                 let messages = parse_l2_topk(exchange, market_type, raw, Some(timestamp))
                     .unwrap_or_else(|_| panic!("{}", line));
                 for message in messages {
-                    let json_str = serde_json::to_string(&message).unwrap();
-                    write(message.timestamp, json_str);
+                    let csv_str = message.to_csv_string();
+                    write(message.timestamp, csv_str);
                 }
             }
             _ => panic!("Unsupported msg_type {}", msg_type),
