@@ -95,14 +95,6 @@ fn validate_line(line: &str) -> bool {
     }
 }
 
-// exchanges in exempted list will suceed even if error ratio is greater than threshold
-fn is_exempted(exchange: &str, market_type: MarketType, msg_type: MessageType) -> bool {
-    exchange == "bitget"
-        || (exchange == "binance"
-            && market_type == MarketType::EuropeanOption
-            && msg_type == MessageType::Trade)
-}
-
 /// Split a file by symbol and write to multiple files.
 ///
 /// This function does split, dedup and parse together, and it is
