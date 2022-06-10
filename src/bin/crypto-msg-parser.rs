@@ -4,6 +4,7 @@ use crypto_msg_type::MessageType;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use log::*;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::env;
@@ -74,6 +75,8 @@ fn parse_lines(
 }
 
 fn main() {
+    env_logger::init();
+
     let args: Vec<String> = env::args().collect();
     if args.len() != 3 {
         eprintln!("Usage: crypto-msg-parser <input_file> <output_file>");
@@ -155,9 +158,9 @@ fn main() {
     );
 
     if success {
-        println!("Succeeded to parse {}", input_file);
+        info!("Succeeded to parse {}", input_file);
     } else {
-        eprintln!("Failed to parse {}", input_file);
+        error!("Failed to parse {}", input_file);
         std::process::exit(1);
     }
 }
