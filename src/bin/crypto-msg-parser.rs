@@ -122,11 +122,11 @@ fn main() {
         MarketType::EuropeanOption
         | MarketType::QuantoSwap
         | MarketType::QuantoFuture
-        | MarketType::Unknown => (),
-        _ => panic!(
+        | MarketType::Unknown => panic!(
             "Unsupported market_type {}, file {}",
             market_type, input_file
         ),
+        _ => (),
     }
 
     let f_in =
