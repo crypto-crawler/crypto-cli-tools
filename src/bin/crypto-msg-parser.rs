@@ -118,6 +118,16 @@ fn main() {
         MessageType::Trade | MessageType::L2Event | MessageType::L2TopK => (),
         _ => panic!("Unsupported msg_type {}, file {}", msg_type, input_file),
     }
+    match market_type {
+        MarketType::EuropeanOption
+        | MarketType::QuantoSwap
+        | MarketType::QuantoFuture
+        | MarketType::Unknown => (),
+        _ => panic!(
+            "Unsupported market_type {}, file {}",
+            market_type, input_file
+        ),
+    }
 
     let f_in =
         std::fs::File::open(input_file).unwrap_or_else(|_| panic!("{} does not exist", input_file));
