@@ -152,14 +152,6 @@ fn split_file(
             }
 
             let msg = serde_json::from_str::<Message>(line).unwrap();
-            {
-                // optional validation
-                assert_eq!(msg.exchange, exchange);
-                if exchange != "bitmex" {
-                    assert_eq!(msg.market_type, market_type);
-                }
-                assert_eq!(msg.msg_type, msg_type);
-            }
 
             // deduplicate
             let hashcode = {
