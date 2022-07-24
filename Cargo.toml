@@ -1,6 +1,6 @@
 [package]
 name = "crypto-cli-tools"
-version = "1.2.2"
+version = "1.2.3"
 edition = "2021"
 authors = ["soulmachine <soulmachine@gmail.com>"]
 description = "A collection of CLI tools to process cryptocurrency data"
@@ -12,7 +12,7 @@ keywords = ["cryptocurrency", "blockchain", "trading"]
 [dependencies]
 chrono = "0.4.19"
 crypto-market-type = "1.1.1"
-crypto-msg-parser = "2.6.8"
+crypto-msg-parser = "2.6.9"
 crypto-msg-type = "1.0.8"
 crypto-pair = "2.2.12"
 crypto-message = "1.1.10"
