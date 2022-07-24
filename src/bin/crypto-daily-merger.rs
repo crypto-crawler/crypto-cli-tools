@@ -197,8 +197,15 @@ fn split_file(
                 }
             };
             if symbol.is_none() {
-                error!("No symbol found in {}", line);
-                error_lines += 1;
+                if !(exchange == "zbg"
+                    && market_type == MarketType::Spot
+                    && msg_type == MessageType::Ticker)
+                {
+                    // don't increase error_lines for zbg spot, and
+                    // drop old zbg spot messages without symbols
+                    error!("No symbol found in {}", line);
+                    error_lines += 1;
+                }
                 continue;
             }
             let symbol = symbol.unwrap();
