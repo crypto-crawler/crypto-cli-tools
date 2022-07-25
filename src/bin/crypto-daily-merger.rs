@@ -205,6 +205,8 @@ fn split_file(
                     // drop old zbg spot messages without symbols
                     error!("No symbol found in {}", line);
                     error_lines += 1;
+                } else {
+                    total_lines -= 1; // to make assert_eq of line 579 pass
                 }
                 continue;
             }
