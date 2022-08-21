@@ -31,7 +31,7 @@ use glob::glob;
 use log::*;
 use once_cell::sync::Lazy;
 use rand::Rng;
-use rlimit::{setrlimit, Resource};
+use rlimit::{getrlimit, setrlimit, Resource};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use threadpool::ThreadPool;
@@ -729,7 +729,11 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
 // Merge files of a given day with the same exchange, msg_type and market_type
 fn main() {
     env_logger::init();
-    assert!(setrlimit(Resource::NOFILE, 131072, 131072).is_ok());
+    if let Err(err) = setrlimit(Resource::NOFILE, 131072, 131072) {
+        error!("setrlimit() failed, {}", err);
+        error!("getrlimit(): {:?}", getrlimit(Resource::NOFILE).unwrap());
+        std::process::exit(1);
+    }
 
     let args: Vec<String> = env::args().collect();
     if args.len() != 4 {
