@@ -586,7 +586,11 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
                 output.0.lock().unwrap().flush().unwrap();
             }
             let error_ratio = (error_lines as f64) / (total_lines as f64);
-            if total_lines > 1000 && error_ratio > 0.01
+            if total_lines > 1000
+                && error_ratio > 0.01
+                // dYdX open_interest returns HTML sometimes
+                && exchange != "dydx"
+                && msg_type != MessageType::OpenInterest
             // && !is_exempted(exchange.as_str(), market_type, msg_type)
             {
                 // error ratio > 1%
