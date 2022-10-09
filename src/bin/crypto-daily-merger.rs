@@ -29,7 +29,6 @@ use flate2::write::GzEncoder;
 use flate2::{read::GzDecoder, Compression};
 use glob::glob;
 use log::*;
-use once_cell::sync::Lazy;
 use rand::Rng;
 use rlimit::{getrlimit, setrlimit, Resource};
 use serde::{Deserialize, Serialize};
@@ -39,10 +38,7 @@ use urlencoding::encode;
 
 const MAX_XZ: usize = 4;
 
-static USE_XZ: Lazy<bool> = Lazy::new(|| match std::env::var("USE_XZ") {
-    Ok(x) => x.parse::<bool>().unwrap_or(false),
-    Err(_e) => false,
-});
+const USE_XZ: bool = true;
 
 /// Copied from crypto-crawler/src/msg.rs
 #[derive(Serialize, Deserialize)]
@@ -688,7 +684,7 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
                 let success = sort_and_merge_files(
                     files_of_same_symbol,
                     output_file,
-                    *USE_XZ,
+                    USE_XZ,
                     semaphore_clone,
                 );
                 tx_clone.send(success).unwrap();
@@ -748,7 +744,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    if *USE_XZ {
+    if USE_XZ {
         if !Path::new("/usr/bin/xz").exists() {
             eprintln!("/usr/bin/xz NOT found, please install it!");
             return;
