@@ -56,12 +56,12 @@ pub struct Message {
 }
 
 fn get_day(timestamp_millis: i64) -> String {
-    let dt = Utc.timestamp(timestamp_millis / 1000, 0);
+    let dt = Utc.timestamp_opt(timestamp_millis / 1000, 0).unwrap();
     dt.format("%Y-%m-%d").to_string()
 }
 
 fn get_hour(timestamp_millis: i64) -> String {
-    let dt = Utc.timestamp(timestamp_millis / 1000, 0);
+    let dt = Utc.timestamp_opt(timestamp_millis / 1000, 0).unwrap();
     dt.format("%Y-%m-%d-%H").to_string()
 }
 
@@ -635,7 +635,7 @@ fn process_files_of_day(
                         .unwrap()
                         .timestamp_millis()
                         / 1000;
-                let next_day = NaiveDateTime::from_timestamp(day_timestamp + 24 * 3600, 0);
+                let next_day = NaiveDateTime::from_timestamp_opt(day_timestamp + 24 * 3600, 0).unwrap();
                 let next_day: DateTime<Utc> = DateTime::from_utc(next_day, Utc);
                 next_day.format("%Y-%m-%d-%H").to_string()
             };
