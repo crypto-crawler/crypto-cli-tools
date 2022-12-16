@@ -98,7 +98,7 @@ fn validate_line(line: &str) -> bool {
 ///
 /// ## Arguments:
 ///
-/// - input_file A `.json.gz` file downloaded from AWS S3
+/// - input_file A `.json.gz` or `.json.xz` file downloaded from AWS S3
 /// - day `yyyy-MM-dd` string, all messages beyond [day-5min, day+5min] will be dropped
 /// - output_dir Where raw messages will be written to
 /// - splitted_files A HashMap that tracks opened files, key is `msg.symbol`, value is file of
@@ -125,7 +125,16 @@ fn split_file(
 
     let f_in = std::fs::File::open(input_file.as_path())
         .unwrap_or_else(|_| panic!("{:?} does not exist", input_file.display()));
-    let buf_reader = std::io::BufReader::new(GzDecoder::new(f_in));
+    let extension = input_file.extension().unwrap();
+    let buf_reader: Box<dyn std::io::BufRead> = if extension == "gz" {
+        let d = GzDecoder::new(f_in);
+        Box::new(std::io::BufReader::new(d))
+    } else if extension == "xz" {
+        let d = xz2::read::XzDecoder::new_multi_decoder(f_in);
+        Box::new(std::io::BufReader::new(d))
+    } else {
+        Box::new(std::io::BufReader::new(f_in))
+    };
 
     let mut total_lines = 0;
     let mut unique_lines = 0;
@@ -257,6 +266,7 @@ fn split_file(
             .unwrap();
             unique_lines += 1;
         } else {
+            error!("{}", line.unwrap_err());
             error!("malformed file {}", input_file.display());
             error_lines += 1;
             total_lines += 1;
@@ -437,9 +447,9 @@ where
     all_success
 }
 
-/// Search files of the given date in the given directory.
-fn search_files(day: &str, input_dir: &str) -> Vec<PathBuf> {
-    let glob_pattern = format!("{}/*.{}-??-??.json.gz", input_dir, day);
+/// Search files of the given date and directory.
+fn search_files(day: &str, input_dir: &str, suffix: &str) -> Vec<PathBuf> {
+    let glob_pattern = format!("{}/*.{}-??-??.json.{}", input_dir, day, suffix);
     let mut paths: Vec<PathBuf> = glob(&glob_pattern)
         .unwrap()
         .filter_map(Result::ok)
@@ -455,7 +465,7 @@ fn search_files(day: &str, input_dir: &str) -> Vec<PathBuf> {
             let next_day: DateTime<Utc> = DateTime::from_utc(next_day, Utc);
             next_day.format("%Y-%m-%d-%H").to_string()
         };
-        let glob_pattern = format!("{}/*.{}-??.json.gz", input_dir, next_day_first_hour);
+        let glob_pattern = format!("{}/*.{}-??.json.{}", input_dir, next_day_first_hour, suffix);
         let mut paths_of_next_day: Vec<PathBuf> = glob(&glob_pattern)
             .unwrap()
             .filter_map(Result::ok)
@@ -469,11 +479,13 @@ fn search_files(day: &str, input_dir: &str) -> Vec<PathBuf> {
 fn search_files_multi(day: &str, input_dirs: &[&str]) -> Vec<PathBuf> {
     let mut paths: Vec<PathBuf> = Vec::new();
     for input_dir in input_dirs {
-        let mut new_paths = search_files(day, input_dir);
+        let mut new_paths = search_files(day, input_dir, "gz");
+        paths.append(&mut new_paths);
+        new_paths = search_files(day, input_dir, "xz");
         paths.append(&mut new_paths);
     }
 
-    let zero_hour = Regex::new(r"\d{4}-\d{2}-\d{2}-00-\d{2}\.json\.gz$").unwrap();
+    let zero_hour = Regex::new(r"\d{4}-\d{2}-\d{2}-00-\d{2}\.json").unwrap();
     if paths
         .iter()
         .filter(|s| !zero_hour.is_match(s.file_name().unwrap().to_str().unwrap()))

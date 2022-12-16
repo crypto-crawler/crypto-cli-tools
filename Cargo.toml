@@ -1,6 +1,6 @@
 [package]
 name = "crypto-cli-tools"
-version = "1.4.4"
+version = "1.4.5"
 edition = "2021"
 authors = ["soulmachine <soulmachine@gmail.com>"]
 description = "A collection of CLI tools to process cryptocurrency data"
@@ -17,7 +17,7 @@ crypto-msg-type = "1.0.11"
 crypto-pair = "2.3.8"
 crypto-message = "1.1.16"
 dashmap = "5.4.0"
-delimited-protobuf = "0.1.0"
+delimited-protobuf = "0.1.1"
 env_logger = "0.10.0"
 flate2 = "1.0.25"
 glob = "0.3.0"
@@ -28,8 +28,8 @@ rand = "0.8.5"
 regex = "1.7.0"
 rlimit = "0.8.3"
 serde_json = "1.0.89"
-serde = { version = "1.0.148", features = ["derive"] }
-sysinfo = "0.26.8"
+serde = { version = "1.0.150", features = ["derive"] }
+sysinfo = "0.27.0"
 threadpool = "1.8.1"
 urlencoding = "2.1.2"
 xz2 = "0.1.7"
