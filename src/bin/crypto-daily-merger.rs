@@ -266,7 +266,6 @@ fn split_file(
             .unwrap();
             unique_lines += 1;
         } else {
-            error!("{}", line.unwrap_err());
             error!("malformed file {}", input_file.display());
             error_lines += 1;
             total_lines += 1;
