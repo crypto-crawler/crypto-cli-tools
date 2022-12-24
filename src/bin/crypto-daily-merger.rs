@@ -569,6 +569,9 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
         }
         thread_pool.join();
         drop(tx); // drop the sender to unblock receiver
+        if thread_pool.panic_count() > 0 {
+            return false;
+        }
 
         let success = {
             let mut total_lines = 0;
@@ -703,6 +706,9 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
         }
         thread_pool.join();
         drop(tx); // drop the sender
+        if thread_pool.panic_count() > 0 {
+            return false;
+        }
 
         let mut all_success = true;
         for success in rx {
