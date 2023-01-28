@@ -31,7 +31,7 @@ use flate2::{read::GzDecoder, Compression};
 use glob::glob;
 use log::*;
 use rand::Rng;
-use rlimit::{setrlimit, Resource};
+use rlimit::{getrlimit, setrlimit, Resource};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use threadpool::ThreadPool;
