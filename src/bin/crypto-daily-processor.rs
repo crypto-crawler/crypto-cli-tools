@@ -41,6 +41,8 @@ const MAX_PIXZ: usize = 2;
 // exchanges in exempted list will suceed even if error ratio is greater than threshold
 const EXEMPTED_EXCHANGES: &[&str] = &["bitget"];
 
+const MAX_OPEN_FILES: u64 = 131072;
+
 #[derive(Serialize, Deserialize)]
 pub struct Message {
     /// The exchange name, unique for each exchage
@@ -922,7 +924,13 @@ fn process_files_of_day(
 
 fn main() {
     env_logger::init();
-    assert!(setrlimit(Resource::NOFILE, 131072, 131072).is_ok());
+    if getrlimit(Resource::NOFILE).unwrap().0 < MAX_OPEN_FILES {
+        if let Err(err) = setrlimit(Resource::NOFILE, MAX_OPEN_FILES, MAX_OPEN_FILES) {
+            error!("setrlimit() failed, {}", err);
+            error!("getrlimit(): {:?}", getrlimit(Resource::NOFILE).unwrap());
+            std::process::exit(1);
+        }
+    }
 
     let args: Vec<String> = env::args().collect();
     if args.len() != 8 {

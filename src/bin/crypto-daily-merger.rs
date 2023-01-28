@@ -40,6 +40,8 @@ const MAX_XZ: usize = 4;
 
 const USE_XZ: bool = true;
 
+const MAX_OPEN_FILES: u64 = 131072;
+
 /// Copied from crypto-crawler/src/msg.rs
 #[derive(Serialize, Deserialize)]
 pub struct Message {
@@ -745,10 +747,12 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
 // Merge files of a given day with the same exchange, msg_type and market_type
 fn main() {
     env_logger::init();
-    if let Err(err) = setrlimit(Resource::NOFILE, 131072, 131072) {
-        error!("setrlimit() failed, {}", err);
-        error!("getrlimit(): {:?}", getrlimit(Resource::NOFILE).unwrap());
-        std::process::exit(1);
+    if getrlimit(Resource::NOFILE).unwrap().0 < MAX_OPEN_FILES {
+        if let Err(err) = setrlimit(Resource::NOFILE, MAX_OPEN_FILES, MAX_OPEN_FILES) {
+            error!("setrlimit() failed, {}", err);
+            error!("getrlimit(): {:?}", getrlimit(Resource::NOFILE).unwrap());
+            std::process::exit(1);
+        }
     }
 
     let args: Vec<String> = env::args().collect();
