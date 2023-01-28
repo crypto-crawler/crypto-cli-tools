@@ -122,9 +122,7 @@ fn main() {
         MarketType::EuropeanOption
         | MarketType::QuantoSwap
         | MarketType::QuantoFuture
-        | MarketType::Unknown => panic!(
-            "Unsupported market_type {market_type}, file {input_file}"
-        ),
+        | MarketType::Unknown => panic!("Unsupported market_type {market_type}, file {input_file}"),
         _ => (),
     }
 

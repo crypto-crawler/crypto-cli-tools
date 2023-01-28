@@ -82,9 +82,7 @@ fn main() {
         && !proto_file.ends_with(".proto.gz")
         && !proto_file.ends_with(".proto.xz")
     {
-        eprintln!(
-            "{proto_file} suffix should be .proto, .proto.gz or .proto.xz"
-        );
+        eprintln!("{proto_file} suffix should be .proto, .proto.gz or .proto.xz");
         std::process::exit(1);
     }
 

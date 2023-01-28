@@ -280,9 +280,7 @@ where
                                 let output_file_name = {
                                     let hour = get_hour(timestamp);
                                     let pair = crypto_pair::normalize_pair(&symbol, exchange)
-                                        .unwrap_or_else(|| {
-                                            panic!("{symbol} {exchange} {line}")
-                                        });
+                                        .unwrap_or_else(|| panic!("{symbol} {exchange} {line}"));
                                     let (base, quote) = {
                                         let v = pair.as_str().split('/').collect::<Vec<&str>>();
                                         (v[0], v[1])
@@ -634,7 +632,8 @@ fn process_files_of_day(
                         .unwrap()
                         .timestamp_millis()
                         / 1000;
-                let next_day = NaiveDateTime::from_timestamp_opt(day_timestamp + 24 * 3600, 0).unwrap();
+                let next_day =
+                    NaiveDateTime::from_timestamp_opt(day_timestamp + 24 * 3600, 0).unwrap();
                 let next_day: DateTime<Utc> = DateTime::from_utc(next_day, Utc);
                 next_day.format("%Y-%m-%d-%H").to_string()
             };
@@ -794,9 +793,7 @@ fn process_files_of_day(
     {
         let glob_pattern = if market_type == MarketType::Unknown {
             // MarketType::Unknown means all markets
-            format!(
-                "/{msg_type}/{exchange}/*/{exchange}.*.{msg_type}.*.{day}-??.json.gz"
-            )
+            format!("/{msg_type}/{exchange}/*/{exchange}.*.{msg_type}.*.{day}-??.json.gz")
         } else if exchange == "deribit"
             && market_type == MarketType::InverseFuture
             && msg_type == MessageType::Trade

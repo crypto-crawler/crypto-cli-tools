@@ -632,9 +632,7 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
             // inverse_future + inverse_swap
             format!("/inverse_*/{exchange}.*.{msg_type}.*.{day}-??.csv.gz")
         } else {
-            format!(
-                "/{market_type}/{exchange}.{market_type}.{msg_type}.*.{day}-??.csv.gz"
-            )
+            format!("/{market_type}/{exchange}.{market_type}.{msg_type}.*.{day}-??.csv.gz")
         };
 
         let paths: Vec<PathBuf> = glob(format!("{output_dir}{glob_pattern}").as_str())
