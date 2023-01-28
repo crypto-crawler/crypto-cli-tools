@@ -198,7 +198,7 @@ where
                                 writeln!(writer, "{}", serde_json::to_string(&msg).unwrap())
                                     .unwrap();
                             } else {
-                                writeln!(writer, "{}", line).unwrap();
+                                writeln!(writer, "{line}").unwrap();
                             }
                         } else {
                             duplicated_lines += 1;
@@ -279,7 +279,7 @@ where
                                     let hour = get_hour(timestamp);
                                     let pair = crypto_pair::normalize_pair(&symbol, exchange)
                                         .unwrap_or_else(|| {
-                                            panic!("{} {} {}", symbol, exchange, line)
+                                            panic!("{symbol} {exchange} {line}")
                                         });
                                     let (base, quote) = {
                                         let v = pair.as_str().split('/').collect::<Vec<&str>>();
@@ -328,7 +328,7 @@ where
                                     entry.value().clone()
                                 };
                                 let mut writer = output.0.lock().unwrap();
-                                writeln!(writer, "{}", json).unwrap();
+                                writeln!(writer, "{json}").unwrap();
                             };
 
                         match msg.msg_type {
@@ -375,8 +375,7 @@ where
                                             // For deribit, inverse_swap is included in inverse_future
                                             assert_eq!(
                                                 real_market_type, message.market_type,
-                                                "{}, {}",
-                                                real_market_type, line,
+                                                "{real_market_type}, {line}",
                                             );
                                         }
                                         if message.exchange == "mxc" {
@@ -614,13 +613,11 @@ fn process_files_of_day(
         let glob_pattern = if market_type == MarketType::Unknown {
             // MarketType::Unknown means all markets
             format!(
-                "{}/*/{}/{}/*/{}.*.{}.{}-??-??.json.gz",
-                input_dir, msg_type, exchange, exchange, msg_type, day
+                "{input_dir}/*/{msg_type}/{exchange}/*/{exchange}.*.{msg_type}.{day}-??-??.json.gz"
             )
         } else {
             format!(
-                "{}/*/{}/{}/{}/{}.{}.{}.{}-??-??.json.gz",
-                input_dir, msg_type, exchange, market_type, exchange, market_type, msg_type, day
+                "{input_dir}/*/{msg_type}/{exchange}/{market_type}/{exchange}.{market_type}.{msg_type}.{day}-??-??.json.gz"
             )
         };
         let mut paths: Vec<PathBuf> = glob(&glob_pattern)
@@ -631,7 +628,7 @@ fn process_files_of_day(
             // Add addtional files of tomorrow, because there might be some messages belong to today
             let next_day_first_hour = {
                 let day_timestamp =
-                    DateTime::parse_from_rfc3339(format!("{}T00:00:00Z", day).as_str())
+                    DateTime::parse_from_rfc3339(format!("{day}T00:00:00Z").as_str())
                         .unwrap()
                         .timestamp_millis()
                         / 1000;
@@ -642,20 +639,11 @@ fn process_files_of_day(
             let glob_pattern = if market_type == MarketType::Unknown {
                 // MarketType::Unknown means all markets
                 format!(
-                    "{}/*/{}/{}/*/{}.*.{}.{}-??.json.gz",
-                    input_dir, msg_type, exchange, exchange, msg_type, next_day_first_hour
+                    "{input_dir}/*/{msg_type}/{exchange}/*/{exchange}.*.{msg_type}.{next_day_first_hour}-??.json.gz"
                 )
             } else {
                 format!(
-                    "{}/*/{}/{}/{}/{}.{}.{}.{}-??.json.gz",
-                    input_dir,
-                    msg_type,
-                    exchange,
-                    market_type,
-                    exchange,
-                    market_type,
-                    msg_type,
-                    next_day_first_hour
+                    "{input_dir}/*/{msg_type}/{exchange}/{market_type}/{exchange}.{market_type}.{msg_type}.{next_day_first_hour}-??.json.gz"
                 )
             };
             let mut paths_of_next_day: Vec<PathBuf> = glob(&glob_pattern)
@@ -805,25 +793,22 @@ fn process_files_of_day(
         let glob_pattern = if market_type == MarketType::Unknown {
             // MarketType::Unknown means all markets
             format!(
-                "/{}/{}/*/{}.*.{}.*.{}-??.json.gz",
-                msg_type, exchange, exchange, msg_type, day
+                "/{msg_type}/{exchange}/*/{exchange}.*.{msg_type}.*.{day}-??.json.gz"
             )
         } else if exchange == "deribit"
             && market_type == MarketType::InverseFuture
             && msg_type == MessageType::Trade
         {
             format!(
-                "/{}/{}/{{invere_future,inverse_swap}}/{}.*.{}.*.{}-??.json.gz",
-                msg_type, exchange, exchange, msg_type, day
+                "/{msg_type}/{exchange}/{{invere_future,inverse_swap}}/{exchange}.*.{msg_type}.*.{day}-??.json.gz"
             )
         } else {
             format!(
-                "/{}/{}/{}/{}.{}.{}.*.{}-??.json.gz",
-                msg_type, exchange, market_type, exchange, market_type, msg_type, day
+                "/{msg_type}/{exchange}/{market_type}/{exchange}.{market_type}.{msg_type}.*.{day}-??.json.gz"
             )
         };
 
-        let paths_raw: Vec<PathBuf> = glob(format!("{}{}", output_dir_raw, glob_pattern).as_str())
+        let paths_raw: Vec<PathBuf> = glob(format!("{output_dir_raw}{glob_pattern}").as_str())
             .unwrap()
             .filter_map(Result::ok)
             .collect();
@@ -832,7 +817,7 @@ fn process_files_of_day(
             return true;
         }
 
-        let paths_parsed = glob(format!("{}{}", output_dir_parsed, glob_pattern).as_str())
+        let paths_parsed = glob(format!("{output_dir_parsed}{glob_pattern}").as_str())
             .unwrap()
             .filter_map(Result::ok);
 
@@ -968,13 +953,13 @@ fn main() {
     let day: &'static str = Box::leak(args[4].clone().into_boxed_str());
     let re = Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap();
     if !re.is_match(day) {
-        eprintln!("{} is invalid, day should be yyyy-MM-dd", day);
+        eprintln!("{day} is invalid, day should be yyyy-MM-dd");
         std::process::exit(1);
     }
 
     let input_dir: &'static str = Box::leak(args[5].clone().into_boxed_str());
     if !Path::new(input_dir).is_dir() {
-        eprintln!("{} does NOT exist", input_dir);
+        eprintln!("{input_dir} does NOT exist");
         std::process::exit(1);
     }
     let output_dir_raw: &'static str = Box::leak(args[6].clone().into_boxed_str());

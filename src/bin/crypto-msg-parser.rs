@@ -33,7 +33,7 @@ fn parse_lines(
         let line = line.unwrap();
 
         let arr = line.split('\t').collect::<Vec<&str>>();
-        assert_eq!(arr.len(), 3, "Not 3 columns: {}", line);
+        assert_eq!(arr.len(), 3, "Not 3 columns: {line}");
         let timestamp = arr[1].parse::<i64>().unwrap();
         let raw = arr[2];
 
@@ -62,7 +62,7 @@ fn parse_lines(
                     write(message.timestamp, csv_str);
                 }
             }
-            _ => panic!("Unsupported msg_type {}", msg_type),
+            _ => panic!("Unsupported msg_type {msg_type}"),
         }
     }
 
@@ -94,14 +94,14 @@ fn main() {
         && !input_file.ends_with(".csv.gz")
         && !input_file.ends_with(".csv.xz")
     {
-        eprintln!("{} suffix should be .csv, .csv.gz or .csv.xz", input_file);
+        eprintln!("{input_file} suffix should be .csv, .csv.gz or .csv.xz");
         std::process::exit(1);
     }
     if !output_file.ends_with(".csv")
         && !output_file.ends_with(".csv.gz")
         && !output_file.ends_with(".csv.xz")
     {
-        eprintln!("{} suffix should be .csv, .csv.gz or .csv.xz", output_file);
+        eprintln!("{output_file} suffix should be .csv, .csv.gz or .csv.xz");
         std::process::exit(1);
     }
 
@@ -116,21 +116,20 @@ fn main() {
     };
     match msg_type {
         MessageType::Trade | MessageType::L2Event | MessageType::L2TopK => (),
-        _ => panic!("Unsupported msg_type {}, file {}", msg_type, input_file),
+        _ => panic!("Unsupported msg_type {msg_type}, file {input_file}"),
     }
     match market_type {
         MarketType::EuropeanOption
         | MarketType::QuantoSwap
         | MarketType::QuantoFuture
         | MarketType::Unknown => panic!(
-            "Unsupported market_type {}, file {}",
-            market_type, input_file
+            "Unsupported market_type {market_type}, file {input_file}"
         ),
         _ => (),
     }
 
     let f_in =
-        std::fs::File::open(input_file).unwrap_or_else(|_| panic!("{} does not exist", input_file));
+        std::fs::File::open(input_file).unwrap_or_else(|_| panic!("{input_file} does not exist"));
     let mut buf_reader: Box<dyn std::io::BufRead> = if input_file.ends_with(".gz") {
         let d = GzDecoder::new(f_in);
         Box::new(std::io::BufReader::new(d))

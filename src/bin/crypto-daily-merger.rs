@@ -448,7 +448,7 @@ where
 
 /// Search files of the given date and directory.
 fn search_files(day: &str, input_dir: &str, suffix: &str) -> Vec<PathBuf> {
-    let glob_pattern = format!("{}/*.{}-??-??.json.{}", input_dir, day, suffix);
+    let glob_pattern = format!("{input_dir}/*.{day}-??-??.json.{suffix}");
     let mut paths: Vec<PathBuf> = glob(&glob_pattern)
         .unwrap()
         .filter_map(Result::ok)
@@ -456,7 +456,7 @@ fn search_files(day: &str, input_dir: &str, suffix: &str) -> Vec<PathBuf> {
     {
         // Add addtional files of tomorrow, because there might be some messages belong to today
         let next_day_first_hour = {
-            let day_timestamp = DateTime::parse_from_rfc3339(format!("{}T00:00:00Z", day).as_str())
+            let day_timestamp = DateTime::parse_from_rfc3339(format!("{day}T00:00:00Z").as_str())
                 .unwrap()
                 .timestamp_millis()
                 / 1000;
@@ -464,7 +464,7 @@ fn search_files(day: &str, input_dir: &str, suffix: &str) -> Vec<PathBuf> {
             let next_day: DateTime<Utc> = DateTime::from_utc(next_day, Utc);
             next_day.format("%Y-%m-%d-%H").to_string()
         };
-        let glob_pattern = format!("{}/*.{}-??.json.{}", input_dir, next_day_first_hour, suffix);
+        let glob_pattern = format!("{input_dir}/*.{next_day_first_hour}-??.json.{suffix}");
         let mut paths_of_next_day: Vec<PathBuf> = glob(&glob_pattern)
             .unwrap()
             .filter_map(Result::ok)
@@ -622,21 +622,20 @@ fn process_files_of_day(day: &str, input_dirs: &[&str], output_dir: &str) -> boo
     {
         let glob_pattern = if market_type == MarketType::Unknown {
             // MarketType::Unknown means all markets
-            format!("/*/{}.*.{}.*.{}-??.csv.gz", exchange, msg_type, day)
+            format!("/*/{exchange}.*.{msg_type}.*.{day}-??.csv.gz")
         } else if exchange == "deribit"
             && market_type == MarketType::InverseFuture
             && msg_type == MessageType::Trade
         {
             // inverse_future + inverse_swap
-            format!("/inverse_*/{}.*.{}.*.{}-??.csv.gz", exchange, msg_type, day)
+            format!("/inverse_*/{exchange}.*.{msg_type}.*.{day}-??.csv.gz")
         } else {
             format!(
-                "/{}/{}.{}.{}.*.{}-??.csv.gz",
-                market_type, exchange, market_type, msg_type, day
+                "/{market_type}/{exchange}.{market_type}.{msg_type}.*.{day}-??.csv.gz"
             )
         };
 
-        let paths: Vec<PathBuf> = glob(format!("{}{}", output_dir, glob_pattern).as_str())
+        let paths: Vec<PathBuf> = glob(format!("{output_dir}{glob_pattern}").as_str())
             .unwrap()
             .filter_map(Result::ok)
             .collect();
@@ -773,7 +772,7 @@ fn main() {
     let day: &'static str = Box::leak(args[1].clone().into_boxed_str());
     let re = Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap();
     if !re.is_match(day) {
-        eprintln!("{} is invalid, day should be yyyy-MM-dd", day);
+        eprintln!("{day} is invalid, day should be yyyy-MM-dd");
         std::process::exit(1);
     }
 

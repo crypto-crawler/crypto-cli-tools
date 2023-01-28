@@ -20,7 +20,7 @@ fn parse_lines(
     buf_reader: &mut dyn std::io::BufRead,
     writer: &mut dyn std::io::Write,
 ) -> bool {
-    let pair = format!("{}/{}", base, quote);
+    let pair = format!("{base}/{quote}");
     let msg_type_enum = MessageType::from_str(msg_type).unwrap();
     for line in buf_reader.lines() {
         let line = line.unwrap();
@@ -49,7 +49,7 @@ fn parse_lines(
                 let proto_msg = orderbook_msg.to_proto();
                 delimited_protobuf::write(&proto_msg, writer).unwrap();
             }
-            _ => panic!("Unsupported msg_type {}", msg_type),
+            _ => panic!("Unsupported msg_type {msg_type}"),
         }
     }
 
@@ -75,7 +75,7 @@ fn main() {
         && !csv_file.ends_with(".csv.gz")
         && !csv_file.ends_with(".csv.xz")
     {
-        eprintln!("{} suffix should be .csv, .csv.gz or .csv.xz", csv_file);
+        eprintln!("{csv_file} suffix should be .csv, .csv.gz or .csv.xz");
         std::process::exit(1);
     }
     if !proto_file.ends_with(".proto")
@@ -83,8 +83,7 @@ fn main() {
         && !proto_file.ends_with(".proto.xz")
     {
         eprintln!(
-            "{} suffix should be .proto, .proto.gz or .proto.xz",
-            proto_file
+            "{proto_file} suffix should be .proto, .proto.gz or .proto.xz"
         );
         std::process::exit(1);
     }
@@ -96,7 +95,7 @@ fn main() {
     };
 
     let f_in =
-        std::fs::File::open(csv_file).unwrap_or_else(|_| panic!("{} does not exist", csv_file));
+        std::fs::File::open(csv_file).unwrap_or_else(|_| panic!("{csv_file} does not exist"));
     let mut buf_reader: Box<dyn std::io::BufRead> = if csv_file.ends_with(".gz") {
         let d = GzDecoder::new(f_in);
         Box::new(std::io::BufReader::new(d))
