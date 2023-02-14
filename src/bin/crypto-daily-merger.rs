@@ -268,7 +268,12 @@ fn split_file(
             .unwrap();
             unique_lines += 1;
         } else {
-            error!("malformed file {}", input_file.display());
+            error!(
+                "malformed file {}, total lines {}, error lines {}",
+                input_file.display(),
+                total_lines,
+                error_lines
+            );
             error_lines += 1;
             total_lines += 1;
         }
