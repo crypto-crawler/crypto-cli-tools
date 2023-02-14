@@ -1,7 +1,7 @@
 use flate2::read::GzDecoder;
-use xz2::read::XzDecoder;
 use std::env;
 use std::io::prelude::*;
+use xz2::read::XzDecoder;
 
 #[allow(clippy::too_many_arguments)]
 fn count_lines(buf_reader: &mut dyn std::io::BufRead) -> (u64, u64) {
