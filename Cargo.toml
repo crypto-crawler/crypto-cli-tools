@@ -1,6 +1,6 @@
 [package]
 name = "crypto-cli-tools"
-version = "1.4.16"
+version = "1.4.17"
 edition = "2021"
 authors = ["soulmachine <soulmachine@gmail.com>"]
 description = "A collection of CLI tools to process cryptocurrency data"
