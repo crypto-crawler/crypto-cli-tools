@@ -146,7 +146,7 @@ fn split_file(
 
     for line in buf_reader.lines() {
         if let Ok(line) = line {
-            let line = line.as_str().trim();
+            let line = line.trim();
             if line.is_empty() || line == r#"{"status": "maintain"}"# {
                 // ignore empty lines
                 continue;
