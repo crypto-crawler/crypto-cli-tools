@@ -173,6 +173,7 @@ fn split_file(
             }
 
             if msg.json == r#"{"status": "maintain"}"# {
+                error_lines += 1;
                 continue; // ignore huobi garbage messages for l2_snapshot and open_interest
             }
 
