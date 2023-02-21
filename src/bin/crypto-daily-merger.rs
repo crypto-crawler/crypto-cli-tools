@@ -147,7 +147,7 @@ fn split_file(
     for line in buf_reader.lines() {
         if let Ok(line) = line {
             let line = line.trim();
-            if line.is_empty() || line == r#"{"status": "maintain"}"# {
+            if line.is_empty() {
                 // ignore empty lines
                 continue;
             }
@@ -170,6 +170,10 @@ fn split_file(
             if !visited.insert(hashcode) {
                 duplicated_lines += 1;
                 continue;
+            }
+
+            if msg.json == r#"{"status": "maintain"}"# {
+                continue; // ignore huobi garbage messages for l2_snapshot and open_interest
             }
 
             // timestamp
