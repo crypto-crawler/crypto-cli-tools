@@ -172,11 +172,6 @@ fn split_file(
                 continue;
             }
 
-            if msg.json == r#"{"status": "maintain"}"# {
-                error_lines += 1;
-                continue; // ignore huobi garbage messages for l2_snapshot and open_interest
-            }
-
             // timestamp
             let ret = extract_timestamp(exchange, market_type, &msg.json);
             if ret.is_err() {
